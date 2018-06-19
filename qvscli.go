@@ -5,19 +5,29 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"sort"
-	"strings"
+	"time"
 
 	"github.com/urfave/cli"
 )
 
 func main() {
 	var qtsURL string
+	var qtsDisksDir string
 	var defaultLoginFile = fmt.Sprintf("%s/.qvs_login", os.Getenv("HOME"))
 	var loginFile string
 	var metaDataFile string
 	var userDataFile string
+
+	getClient := func() *QVSClient {
+		client, err := NewQVSClient(qtsURL, loginFile, false)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return client
+	}
 
 	app := cli.NewApp()
 	app.Name = "qvscli"
@@ -31,6 +41,13 @@ func main() {
 			Usage:       "URL of QTS, typically the https DNS name of your QNAP NAS",
 			Destination: &qtsURL,
 			EnvVar:      "QVSCLI_QTS_URL",
+		},
+		cli.StringFlag{
+			Name:        "qvs-disks-dir",
+			Value:       "/VirtualMachines/disks",
+			Usage:       "NAS path to folder where disk images are stored",
+			Destination: &qtsDisksDir,
+			EnvVar:      "QVSCLI_QTS_DISKS_DIR",
 		},
 		cli.StringFlag{
 			Name:        "loginfile",
@@ -55,16 +72,15 @@ func main() {
 		},
 	}
 
-	getClient := func() *QVSClient {
-		return NewQVSClient(qtsURL, loginFile)
-	}
-
 	app.Commands = []cli.Command{
 		{
 			Name:  "login",
 			Usage: "login to QVS and obtain session cookie stored in ${HOME}/.qvs_login",
 			Action: func(c *cli.Context) error {
-				client := getClient()
+				client, err := NewQVSClient(qtsURL, loginFile, true)
+				if err != nil {
+					return err
+				}
 				return client.Login()
 			},
 		},
@@ -126,7 +142,7 @@ func main() {
 					Aliases: []string{"c"},
 					Usage:   "create a VM with provided meta-data and user-data",
 					Action: func(c *cli.Context) error {
-						// client := NewQVSClient(qtsURL, loginFile)
+						client := getClient()
 
 						name := c.Args().Get(0)
 
@@ -135,12 +151,45 @@ func main() {
 						if !nameRegex.MatchString(name) {
 							return fmt.Errorf("invalid instance name: %s", name)
 						}
-						isoDestFile := fmt.Sprintf("%s-config.iso", strings.Replace(strings.Replace(name, " ", "-", -1), "_", "-", -1))
+						ts := time.Now().UTC().Unix()
+						isoDestFile := fmt.Sprintf("metadata_%d.iso", ts)
 						if err := makeConfigISO(isoDestFile, metaDataFile, userDataFile); err != nil {
 							return err
 						}
 
-						log.Printf("Created config ISO image: %s\n", isoDestFile)
+						qtsDest := path.Join(qtsDisksDir, name, path.Base(isoDestFile))
+
+						// Check for existing folder
+						files, err := client.ListDir(qtsDisksDir)
+						if err != nil {
+							return err
+						}
+						found := false
+						for _, qf := range files {
+							if qf.Filename == name {
+								found = true
+								break
+							}
+						}
+
+						// Create directory for VM disk
+						if found == false {
+							log.Printf("INFO: Creating directory on NAS for VM: %s", path.Dir(qtsDest))
+							if err := client.CreateDir(path.Dir(qtsDest)); err != nil {
+								return err
+							}
+						}
+
+						f, err := os.Open(isoDestFile)
+						if err != nil {
+							return err
+						}
+
+						if err := client.UploadFile(f, qtsDest); err != nil {
+							return err
+						}
+
+						log.Printf("Uploaded metadata ISO image to NAS: %s\n", qtsDest)
 
 						return nil
 					},

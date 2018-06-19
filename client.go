@@ -13,11 +13,12 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/howeyc/gopass"
 )
 
-func NewQVSClient(qtsURL string, loginFile string) *QVSClient {
+func NewQVSClient(qtsURL string, loginFile string, init bool) (*QVSClient, error) {
 	c := &QVSClient{
 		QtsURL:    strings.TrimSpace(qtsURL),
 		LoginFile: strings.TrimSpace(loginFile),
@@ -28,7 +29,11 @@ func NewQVSClient(qtsURL string, loginFile string) *QVSClient {
 		c.CookieJar, _ = cookiejar.New(nil)
 	}
 
-	return c
+	if init == false && !c.checkLogin() {
+		return nil, fmt.Errorf("not logged in, run 'qvscli login'")
+	}
+
+	return c, nil
 }
 
 func (c *QVSClient) Login() error {
@@ -97,13 +102,14 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 		}
 	}
 
-	f, err := os.OpenFile(c.LoginFile, os.O_RDWR|os.O_CREATE, 0644)
+	f, err := os.OpenFile(c.LoginFile, os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("error, failed to open login file '%s' for writting: %v", c.LoginFile, err)
 	}
 
 	// Persist user and session id
 	var lf LoginFile
+	lf.QtsURL = c.QtsURL
 	lf.Username = login.Username
 	lf.QTSSessionID = login.AuthSID
 	lfData, _ := json.MarshalIndent(&lf, "", "  ")
@@ -111,21 +117,6 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 	f.Close()
 
 	return nil
-}
-
-func (c *QVSClient) getQTSSessionIDFromCookie() string {
-	u, _ := url.Parse(c.QtsURL)
-	cookies := c.CookieJar.Cookies(u)
-	if len(cookies) == 0 {
-		return ""
-	}
-
-	for _, c := range cookies {
-		if c.Name == "NAS_SID" {
-			return c.Value
-		}
-	}
-	return ""
 }
 
 func (c *QVSClient) loadQTSCookieFromFile() error {
@@ -148,17 +139,19 @@ func (c *QVSClient) loadQTSCookieFromFile() error {
 		&http.Cookie{Name: "NAS_SID", Value: lf.QTSSessionID},
 	})
 
+	c.SessionID = lf.QTSSessionID
+
 	return nil
 }
 
-func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Response, error) {
-	if c.getQTSSessionIDFromCookie() == "" {
-		return nil, fmt.Errorf("not logged in, run 'qvscli login'")
-	}
+func (c *QVSClient) checkLogin() bool {
+	now := time.Now()
+	params := fmt.Sprintf("sid=%s&_dc=%d", c.SessionID, now.Unix())
 
-	req, _ := http.NewRequest(method, fmt.Sprintf("%s%s", c.QtsURL, path), bytes.NewBuffer([]byte(data)))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	authURL := fmt.Sprintf("%s%s", c.QtsURL, QTSAuthLogin)
+
+	req, _ := http.NewRequest("POST", authURL, bytes.NewBuffer([]byte(params)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{
 		Jar: c.CookieJar,
@@ -166,69 +159,16 @@ func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Respo
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("error making request, HTTP status code: %d", resp.StatusCode)
-	}
-
-	return resp, nil
-}
-
-func (c *QVSClient) MACCreate() (string, error) {
-	resp, err := c.qvsReq("GET", QVSGetMAC, "")
-	if err != nil {
-		return "", err
+		return false
 	}
 	defer resp.Body.Close()
 
-	type CreateMACResponse struct {
-		Status int    `json:"status"`
-		Data   string `json:"data"`
-	}
-	var macResp CreateMACResponse
-	err = json.NewDecoder(resp.Body).Decode(&macResp)
-	if err != nil {
-		return "", err
+	dataBytes, _ := ioutil.ReadAll(resp.Body)
+
+	var login QTSLoginResponse
+	if err := xml.Unmarshal(dataBytes, &login); err != nil {
+		return false
 	}
 
-	return macResp.Data, err
-}
-
-func (c *QVSClient) VMList() ([]VMResponse, error) {
-	resp, err := c.qvsReq("GET", QVSGetVMs, "")
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	var vmList ListVMsResponse
-	err = json.NewDecoder(resp.Body).Decode(&vmList)
-	if err != nil {
-		return nil, err
-	}
-
-	return vmList.Data, err
-}
-
-func (c *QVSClient) VMDescribe(id string) (string, error) {
-	path := fmt.Sprintf("%s/%s", QVSGetVMs, id)
-	resp, err := c.qvsReq("GET", path, "")
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	data, _ := ioutil.ReadAll(resp.Body)
-
-	var jsonData map[string]interface{}
-	err = json.Unmarshal(data, &jsonData)
-
-	status := int(jsonData["status"].(float64))
-	if status != 0 {
-		return "", fmt.Errorf("error making request, status was: %d", status)
-	}
-
-	pretty, _ := json.MarshalIndent(jsonData["data"], "", "  ")
-	return string(pretty), err
+	return login.AuthPassed == 1
 }

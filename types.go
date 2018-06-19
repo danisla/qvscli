@@ -3,11 +3,13 @@ package main
 import "net/http/cookiejar"
 
 const QTSAuthLogin = "/cgi-bin/authLogin.cgi"
+const QTSFileStation = "/cgi-bin/filemanager/utilRequest.cgi"
 
 const QVSGetMAC = "/qvs/vms/mac"
 const QVSGetVMs = "/qvs/vms"
 
 type LoginFile struct {
+	QtsURL       string `json:"qts_url"`
 	Username     string `json:"username"`
 	QTSSessionID string `json:"qts_sessionid"`
 }
@@ -27,6 +29,11 @@ type QTSLoginResponse struct {
 	AuthPassed int    `xml:"authPassed"`
 	AuthSID    string `xml:"authSid"`
 	Username   string `xml:"username"`
+}
+
+type ListFile struct {
+	Filename string `json:"filename"`
+	IsFolder int    `json:"isfolder"`
 }
 
 type CreateMACResponse struct {
