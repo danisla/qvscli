@@ -2,21 +2,31 @@ package main
 
 import "net/http/cookiejar"
 
-const QVSAuthLogin = "/auth/login"
-const QVSGetMAC = "/vms/mac"
-const QVSGetVMs = "/vms"
+const QTSAuthLogin = "/cgi-bin/authLogin.cgi"
+
+const QVSGetMAC = "/qvs/vms/mac"
+const QVSGetVMs = "/qvs/vms"
 
 type LoginFile struct {
-	SessionID string `json:"sessionid"`
+	Username     string `json:"username"`
+	QTSSessionID string `json:"qts_sessionid"`
 }
 
 type QVSClient struct {
-	URL        string
+	QtsURL     string
 	LoginFile  string
 	SessionID  string
 	CookieJar  *cookiejar.Jar
 	LoginPath  string
 	GetMACPath string
+}
+
+type QTSLoginResponse struct {
+	Need2SV    int    `xml:"need_2sv"`
+	PWStatus   int    `xml:"pw_status"`
+	AuthPassed int    `xml:"authPassed"`
+	AuthSID    string `xml:"authSid"`
+	Username   string `xml:"username"`
 }
 
 type CreateMACResponse struct {

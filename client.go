@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -16,13 +17,13 @@ import (
 	"github.com/howeyc/gopass"
 )
 
-func NewQVSClient(qvsURL string, loginFile string) *QVSClient {
+func NewQVSClient(qtsURL string, loginFile string) *QVSClient {
 	c := &QVSClient{
-		URL:       strings.TrimSpace(qvsURL),
+		QtsURL:    strings.TrimSpace(qtsURL),
 		LoginFile: strings.TrimSpace(loginFile),
 	}
 
-	err := c.loadCookieFromFile()
+	err := c.loadQTSCookieFromFile()
 	if err != nil {
 		c.CookieJar, _ = cookiejar.New(nil)
 	}
@@ -31,7 +32,6 @@ func NewQVSClient(qvsURL string, loginFile string) *QVSClient {
 }
 
 func (c *QVSClient) Login() error {
-
 	reader := bufio.NewReader(os.Stdin)
 
 	fmt.Print("Enter Username: ")
@@ -40,26 +40,61 @@ func (c *QVSClient) Login() error {
 	fmt.Printf("Enter Password: ")
 	password, _ := gopass.GetPasswd()
 
-	data := fmt.Sprintf("{\"username\":\"%s\",\"password\":\"%s\"}", strings.TrimSpace(username), base64.StdEncoding.EncodeToString(password))
+	username = strings.TrimSpace(username)
 
-	authURL := fmt.Sprintf("%s%s", c.URL, QVSAuthLogin)
+	if username == "" || string(password) == "" {
+		return fmt.Errorf("no username and/or password provided.")
+	}
 
-	req, _ := http.NewRequest("POST", authURL, bytes.NewBuffer([]byte(data)))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	passwordBase64 := base64.StdEncoding.EncodeToString(password)
+
+	if err := c.QTSLogin(username, passwordBase64, ""); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *QVSClient) QTSLogin(username string, password string, securityCode string) error {
+	params := fmt.Sprintf("user=%s&pwd=%s&serviceKey=1&security_code=%s", username, password, securityCode)
+
+	authURL := fmt.Sprintf("%s%s", c.QtsURL, QTSAuthLogin)
+
+	req, _ := http.NewRequest("POST", authURL, bytes.NewBuffer([]byte(params)))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	client := &http.Client{
 		Jar: c.CookieJar,
 	}
 
-	_, err := client.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return err
 	}
+	defer resp.Body.Close()
 
-	sessionid := c.getSessionIDFromCookie()
-	if sessionid == "" {
-		return fmt.Errorf("error, login failed")
+	dataBytes, _ := ioutil.ReadAll(resp.Body)
+
+	var login QTSLoginResponse
+	if err := xml.Unmarshal(dataBytes, &login); err != nil {
+		return err
+	}
+
+	if login.AuthPassed == 0 {
+		if login.Need2SV == 1 {
+			// Get security code
+			reader := bufio.NewReader(os.Stdin)
+
+			fmt.Print("Enter Security Code: ")
+			securityCode, _ := reader.ReadString('\n')
+			securityCode = strings.TrimSpace(securityCode)
+
+			// Retry request
+			return c.QTSLogin(username, password, securityCode)
+
+		} else {
+			return fmt.Errorf("invalid credentials")
+		}
 	}
 
 	f, err := os.OpenFile(c.LoginFile, os.O_RDWR|os.O_CREATE, 0644)
@@ -67,32 +102,33 @@ func (c *QVSClient) Login() error {
 		return fmt.Errorf("error, failed to open login file '%s' for writting: %v", c.LoginFile, err)
 	}
 
-	// Persist sessionid
+	// Persist user and session id
 	var lf LoginFile
-	lf.SessionID = sessionid
-	lfData, _ := json.Marshal(&lf)
+	lf.Username = login.Username
+	lf.QTSSessionID = login.AuthSID
+	lfData, _ := json.MarshalIndent(&lf, "", "  ")
 	f.Write(lfData)
 	f.Close()
 
 	return nil
 }
 
-func (c *QVSClient) getSessionIDFromCookie() string {
-	u, _ := url.Parse(c.URL)
+func (c *QVSClient) getQTSSessionIDFromCookie() string {
+	u, _ := url.Parse(c.QtsURL)
 	cookies := c.CookieJar.Cookies(u)
 	if len(cookies) == 0 {
 		return ""
 	}
 
 	for _, c := range cookies {
-		if c.Name == "sessionid" {
+		if c.Name == "NAS_SID" {
 			return c.Value
 		}
 	}
 	return ""
 }
 
-func (c *QVSClient) loadCookieFromFile() error {
+func (c *QVSClient) loadQTSCookieFromFile() error {
 	raw, err := ioutil.ReadFile(c.LoginFile)
 	if err != nil {
 		return err
@@ -106,25 +142,21 @@ func (c *QVSClient) loadCookieFromFile() error {
 
 	cookieJar, _ := cookiejar.New(nil)
 	c.CookieJar = cookieJar
-
-	var cookies []*http.Cookie
-	u, _ := url.Parse(c.URL)
-	cookie := &http.Cookie{
-		Name:  "sessionid",
-		Value: lf.SessionID,
-	}
-	cookies = append(cookies, cookie)
-	c.CookieJar.SetCookies(u, cookies)
+	u, _ := url.Parse(c.QtsURL)
+	c.CookieJar.SetCookies(u, []*http.Cookie{
+		&http.Cookie{Name: "NAS_USER", Value: lf.Username},
+		&http.Cookie{Name: "NAS_SID", Value: lf.QTSSessionID},
+	})
 
 	return nil
 }
 
 func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Response, error) {
-	if c.getSessionIDFromCookie() == "" {
+	if c.getQTSSessionIDFromCookie() == "" {
 		return nil, fmt.Errorf("not logged in, run 'qvscli login'")
 	}
 
-	req, _ := http.NewRequest(method, fmt.Sprintf("%s%s", c.URL, path), bytes.NewBuffer([]byte(data)))
+	req, _ := http.NewRequest(method, fmt.Sprintf("%s%s", c.QtsURL, path), bytes.NewBuffer([]byte(data)))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

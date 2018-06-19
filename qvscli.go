@@ -13,7 +13,7 @@ import (
 )
 
 func main() {
-	var qvsURL string
+	var qtsURL string
 	var defaultLoginFile = fmt.Sprintf("%s/.qvs_login", os.Getenv("HOME"))
 	var loginFile string
 	var metaDataFile string
@@ -26,11 +26,11 @@ func main() {
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
-			Name:        "url, u",
-			Value:       "http://localhost:8088",
-			Usage:       "URL of QVS, typically the IP of your QNAP NAS on port 8088",
-			Destination: &qvsURL,
-			EnvVar:      "QVSCLI_URL",
+			Name:        "qts-url",
+			Value:       "https://qnap.homelab.cloud",
+			Usage:       "URL of QTS, typically the https DNS name of your QNAP NAS",
+			Destination: &qtsURL,
+			EnvVar:      "QVSCLI_QTS_URL",
 		},
 		cli.StringFlag{
 			Name:        "loginfile",
@@ -55,12 +55,16 @@ func main() {
 		},
 	}
 
+	getClient := func() *QVSClient {
+		return NewQVSClient(qtsURL, loginFile)
+	}
+
 	app.Commands = []cli.Command{
 		{
 			Name:  "login",
 			Usage: "login to QVS and obtain session cookie stored in ${HOME}/.qvs_login",
 			Action: func(c *cli.Context) error {
-				client := NewQVSClient(qvsURL, loginFile)
+				client := getClient()
 				return client.Login()
 			},
 		},
@@ -72,7 +76,7 @@ func main() {
 					Name:  "create",
 					Usage: "generate a new mac address",
 					Action: func(c *cli.Context) error {
-						client := NewQVSClient(qvsURL, loginFile)
+						client := getClient()
 						mac, err := client.MACCreate()
 						if err != nil {
 							return err
@@ -91,7 +95,7 @@ func main() {
 					Name:  "list",
 					Usage: "list virtual machines",
 					Action: func(c *cli.Context) error {
-						client := NewQVSClient(qvsURL, loginFile)
+						client := getClient()
 						vms, err := client.VMList()
 						if err != nil {
 							return err
@@ -107,7 +111,7 @@ func main() {
 					Aliases: []string{"desc"},
 					Usage:   "describe VM by ID",
 					Action: func(c *cli.Context) error {
-						client := NewQVSClient(qvsURL, loginFile)
+						client := getClient()
 						id := c.Args().First()
 						vms, err := client.VMDescribe(id)
 						if err != nil {
@@ -122,7 +126,7 @@ func main() {
 					Aliases: []string{"c"},
 					Usage:   "create a VM with provided meta-data and user-data",
 					Action: func(c *cli.Context) error {
-						// client := NewQVSClient(qvsURL, loginFile)
+						// client := NewQVSClient(qtsURL, loginFile)
 
 						name := c.Args().Get(0)
 
@@ -131,8 +135,7 @@ func main() {
 						if !nameRegex.MatchString(name) {
 							return fmt.Errorf("invalid instance name: %s", name)
 						}
-						name = strings.Replace(name, " ", "-", -1)
-						isoDestFile := fmt.Sprintf("%s-config.iso", name)
+						isoDestFile := fmt.Sprintf("%s-config.iso", strings.Replace(strings.Replace(name, " ", "-", -1), "_", "-", -1))
 						if err := makeConfigISO(isoDestFile, metaDataFile, userDataFile); err != nil {
 							return err
 						}
