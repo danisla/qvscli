@@ -25,7 +25,6 @@ func main() {
 			Value:       "http://localhost:8088",
 			Usage:       "URL of QVS, typically the IP of your QNAP NAS on port 8088",
 			Destination: &qvsURL,
-			FilePath:    fmt.Sprintf("%s/.qvscli_url", os.Getenv("HOME")),
 			EnvVar:      "QVSCLI_URL",
 		},
 		cli.StringFlag{
