@@ -2,6 +2,14 @@
 
 A command line tool for interacting with the QNAP Virtualization Station REST API.
 
+## External Dependencies
+
+To build the cloud-init metadata ISO, install `genisoimage`:
+
+```
+sudo apt-get install genisoimage
+```
+
 ## Usage
 
 ```

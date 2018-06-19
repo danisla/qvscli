@@ -4,7 +4,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
+	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/urfave/cli"
 )
@@ -13,6 +16,8 @@ func main() {
 	var qvsURL string
 	var defaultLoginFile = fmt.Sprintf("%s/.qvs_login", os.Getenv("HOME"))
 	var loginFile string
+	var metaDataFile string
+	var userDataFile string
 
 	app := cli.NewApp()
 	app.Name = "qvscli"
@@ -33,6 +38,20 @@ func main() {
 			Usage:       "Override default login file.",
 			Destination: &loginFile,
 			EnvVar:      "QVSCLI_LOGIN_FILE",
+		},
+		cli.StringFlag{
+			Name:        "meta-data",
+			Value:       "meta-data.yaml",
+			Usage:       "Path to meta-data file for cloud-init",
+			Destination: &metaDataFile,
+			EnvVar:      "QVSCLI_META_DATA_FILE",
+		},
+		cli.StringFlag{
+			Name:        "user-data",
+			Value:       "user-data.yaml",
+			Usage:       "Path to user-data file for cloud-init",
+			Destination: &userDataFile,
+			EnvVar:      "QVSCLI_USER_DATA_FILE",
 		},
 	}
 
@@ -98,6 +117,31 @@ func main() {
 						return nil
 					},
 				},
+				{
+					Name:    "create",
+					Aliases: []string{"c"},
+					Usage:   "create a VM with provided meta-data and user-data",
+					Action: func(c *cli.Context) error {
+						// client := NewQVSClient(qvsURL, loginFile)
+
+						name := c.Args().Get(0)
+
+						// Verify name is valid
+						nameRegex := regexp.MustCompile(`^[[:alnum:]][[:alnum:]\-]{0,61}[[:alnum:]]|[[:alpha:]]$`)
+						if !nameRegex.MatchString(name) {
+							return fmt.Errorf("invalid instance name: %s", name)
+						}
+						name = strings.Replace(name, " ", "-", -1)
+						isoDestFile := fmt.Sprintf("%s-config.iso", name)
+						if err := makeConfigISO(isoDestFile, metaDataFile, userDataFile); err != nil {
+							return err
+						}
+
+						log.Printf("Created config ISO image: %s\n", isoDestFile)
+
+						return nil
+					},
+				},
 			},
 		},
 	}
@@ -109,4 +153,13 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func makeConfigISO(isoDestFile, metaDataFile, userDataFile string) error {
+	cmd := "genisoimage"
+	args := []string{"-output", isoDestFile, "-volid", "cidata", "-joliet", "-rock", userDataFile, metaDataFile}
+	if err := exec.Command(cmd, args...).Run(); err != nil {
+		return fmt.Errorf("%v, %s", os.Stderr, err)
+	}
+	return nil
 }
