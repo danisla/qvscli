@@ -15,7 +15,6 @@ qvs cli vm desc 1
 ## Building
 
 ```
-go get -u github.com/howeyc/gopass
-go get -u github.com/urfave/cli
-go install
+dep ensure
+go build
 ```
