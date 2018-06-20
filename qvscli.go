@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path"
 	"regexp"
 	"sort"
@@ -21,6 +20,7 @@ func main() {
 	var loginFile string
 	var metaDataFile string
 	var userDataFile string
+	var noCloudInit bool
 	var vmImage string
 	var macAddress string
 
@@ -164,6 +164,12 @@ func main() {
 							Destination: &userDataFile,
 							EnvVar:      "QVSCLI_USER_DATA_FILE",
 						},
+						cli.BoolFlag{
+							Name:        "no-cloud-init",
+							Usage:       "Disable cloud-init metadata ISO creation",
+							Destination: &noCloudInit,
+							EnvVar:      "QVSCLI_NO_CLOUD_INIT",
+						},
 						cli.StringFlag{
 							Name:        "image",
 							Value:       "debian-cloud/debian-9.img",
@@ -219,12 +225,24 @@ func main() {
 						// Timestamp for generated artifacts
 						ts := time.Now().UTC().Unix()
 
-						metadataISOFile := fmt.Sprintf("metadata_%d.iso", ts)
-						if err := makeConfigISO(metadataISOFile, metaDataFile, userDataFile); err != nil {
-							return err
+						// Userdata and metadata handling
+						metadataISOFile := ""
+						metadataISODest := ""
+						if noCloudInit {
+							log.Printf("WARN: cloud-init disabled, skipping metadata ISO creation. You may not be able log into the VM after booting.")
+						} else {
+							metadataISOFile = fmt.Sprintf("metadata_%d.iso", ts)
+							if _, err := os.Stat(userDataFile); os.IsNotExist(err) {
+								return fmt.Errorf("user-data file does not exist: %s", userDataFile)
+							}
+							if _, err := os.Stat(metaDataFile); os.IsNotExist(err) {
+								return fmt.Errorf("meta-data file does not exist: %s", metaDataFile)
+							}
+							if err := makeConfigISO(metadataISOFile, metaDataFile, userDataFile); err != nil {
+								return err
+							}
+							metadataISODest = path.Join(qvsDisksDir, name, path.Base(metadataISOFile))
 						}
-
-						metadataISODest := path.Join(qvsDisksDir, name, path.Base(metadataISOFile))
 
 						// Check for existing folder
 						files, err := client.ListDir(qvsDisksDir)
@@ -247,14 +265,16 @@ func main() {
 							}
 						}
 
-						f, err := os.Open(metadataISOFile)
-						if err != nil {
-							return err
-						}
+						if metadataISODest != "" {
+							f, err := os.Open(metadataISOFile)
+							if err != nil {
+								return err
+							}
 
-						log.Printf("INFO: Uploading metadata ISO image to NAS: %s\n", metadataISODest)
-						if err := client.UploadFile(f, metadataISODest); err != nil {
-							return err
+							log.Printf("INFO: Uploading metadata ISO image to NAS: %s\n", metadataISODest)
+							if err := client.UploadFile(f, metadataISODest); err != nil {
+								return err
+							}
 						}
 
 						// Remote copy image to VM disk directory
@@ -283,13 +303,4 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func makeConfigISO(metadataISOFile, metaDataFile, userDataFile string) error {
-	cmd := "genisoimage"
-	args := []string{"-output", metadataISOFile, "-volid", "cidata", "-joliet", "-rock", userDataFile, metaDataFile}
-	if err := exec.Command(cmd, args...).Run(); err != nil {
-		return fmt.Errorf("%v, %s", os.Stderr, err)
-	}
-	return nil
 }
