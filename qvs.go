@@ -85,3 +85,27 @@ func (c *QVSClient) VMDescribe(id string) (string, error) {
 	pretty, _ := json.MarshalIndent(jsonData["data"], "", "  ")
 	return string(pretty), err
 }
+
+func (c *QVSClient) QVSListNet() ([]QVSNet, error) {
+	netMgrNetworks, err := c.NetMgrList()
+	if err != nil {
+		return nil, err
+	}
+
+	var networks []QVSNet
+
+	// Filter networks
+	for _, network := range netMgrNetworks {
+		if network.DisplayName != "" {
+			qvsNet := &QVSNet{
+				DisplayName: network.DisplayName,
+				Name:        network.VSwitchName,
+				IP:          network.VSwitchIP,
+				NICs:        []string{network.PhysicalNIC},
+			}
+			networks = append(networks, *qvsNet)
+		}
+	}
+
+	return networks, nil
+}

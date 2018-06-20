@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -13,6 +14,7 @@ import (
 )
 
 func main() {
+	var outputFormat string
 	var qtsURL string
 	var qvsDisksDir string
 	var qvsImagesDir string
@@ -22,7 +24,11 @@ func main() {
 	var userDataFile string
 	var noCloudInit bool
 	var vmImage string
-	var macAddress string
+	var vmMACAddress string
+	var vmNetName string
+	var vmDescription string
+	var vmCores int
+	var vmMemoryGB int
 
 	getClient := func() *QVSClient {
 		client, err := NewQVSClient(qtsURL, loginFile, false)
@@ -94,6 +100,44 @@ func main() {
 							return err
 						}
 						fmt.Printf("%s\n", mac)
+						return nil
+					},
+				},
+			},
+		},
+		{
+			Name:    "networks",
+			Aliases: []string{"net"},
+			Usage:   "options for virtual networks",
+			Subcommands: []cli.Command{
+				{
+					Name:  "list",
+					Usage: "list virtual networks",
+					Flags: []cli.Flag{
+						cli.StringFlag{
+							Name:        "output, o",
+							Usage:       "Output format, text or json",
+							Value:       "text",
+							Destination: &outputFormat,
+						},
+					},
+					Action: func(c *cli.Context) error {
+						client := getClient()
+
+						networks, err := client.QVSListNet()
+						if err != nil {
+							return err
+						}
+
+						if outputFormat == "json" {
+							pretty, _ := json.MarshalIndent(networks, "", "  ")
+							fmt.Println(string(pretty))
+						} else {
+							for _, network := range networks {
+								fmt.Printf("%s\t%s\t%s\t%v\n", network.Name, network.DisplayName, network.IP, network.NICs)
+							}
+						}
+
 						return nil
 					},
 				},
@@ -181,8 +225,36 @@ func main() {
 							Name:        "mac",
 							Value:       "",
 							Usage:       "Set mac address of network interface, if not set, one will be created",
-							Destination: &macAddress,
+							Destination: &vmMACAddress,
 							EnvVar:      "QVSCLI_VM_MAC",
+						},
+						cli.StringFlag{
+							Name:        "network, net",
+							Value:       "br0",
+							Usage:       "Network interface to attach, get names from 'qvscli net list'",
+							Destination: &vmNetName,
+							EnvVar:      "QVSCLI_VM_NET",
+						},
+						cli.StringFlag{
+							Name:        "description, desc",
+							Value:       "",
+							Usage:       "VM description. Default is auto-generated based on the creation time",
+							Destination: &vmDescription,
+							EnvVar:      "QVS_CLI_VM_DESCRIPTION",
+						},
+						cli.IntFlag{
+							Name:        "cores",
+							Value:       1,
+							Usage:       "Number of cores for VM",
+							Destination: &vmCores,
+							EnvVar:      "QVS_CLI_VM_CORES",
+						},
+						cli.IntFlag{
+							Name:        "memory, mem",
+							Value:       2,
+							Usage:       "Memory for VM in integer Gigabytes",
+							Destination: &vmMemoryGB,
+							EnvVar:      "QVS_CLI_VM_MEM_GB",
 						},
 					},
 					Action: func(c *cli.Context) error {
@@ -197,12 +269,12 @@ func main() {
 						}
 
 						// Generate MAC address
-						if macAddress == "" {
-							macAddress, err := client.MACCreate()
+						if vmMACAddress == "" {
+							vmMACAddress, err := client.MACCreate()
 							if err != nil {
 								return err
 							}
-							log.Printf("INFO: Generated new MAC address for instance: %s", macAddress)
+							log.Printf("INFO: Generated new MAC address for instance: %s", vmMACAddress)
 						}
 
 						// Verify image exists
