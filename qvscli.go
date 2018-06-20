@@ -15,11 +15,14 @@ import (
 
 func main() {
 	var qtsURL string
-	var qtsDisksDir string
+	var qvsDisksDir string
+	var qvsImagesDir string
 	var defaultLoginFile = fmt.Sprintf("%s/.qvs_login", os.Getenv("HOME"))
 	var loginFile string
 	var metaDataFile string
 	var userDataFile string
+	var vmImage string
+	var macAddress string
 
 	getClient := func() *QVSClient {
 		client, err := NewQVSClient(qtsURL, loginFile, false)
@@ -46,8 +49,15 @@ func main() {
 			Name:        "qvs-disks-dir",
 			Value:       "/VirtualMachines/disks",
 			Usage:       "NAS path to folder where disk images are stored",
-			Destination: &qtsDisksDir,
-			EnvVar:      "QVSCLI_QTS_DISKS_DIR",
+			Destination: &qvsDisksDir,
+			EnvVar:      "QVSCLI_QVS_DISKS_DIR",
+		},
+		cli.StringFlag{
+			Name:        "qvs-images-dir",
+			Value:       "/VirtualMachines/images",
+			Usage:       "NAS path to base image directory containing folders or .img files",
+			Destination: &qvsImagesDir,
+			EnvVar:      "QVSCLI_QVS_IMAGES_DIR",
 		},
 		cli.StringFlag{
 			Name:        "loginfile",
@@ -55,20 +65,6 @@ func main() {
 			Usage:       "Override default login file.",
 			Destination: &loginFile,
 			EnvVar:      "QVSCLI_LOGIN_FILE",
-		},
-		cli.StringFlag{
-			Name:        "meta-data",
-			Value:       "meta-data.yaml",
-			Usage:       "Path to meta-data file for cloud-init",
-			Destination: &metaDataFile,
-			EnvVar:      "QVSCLI_META_DATA_FILE",
-		},
-		cli.StringFlag{
-			Name:        "user-data",
-			Value:       "user-data.yaml",
-			Usage:       "Path to user-data file for cloud-init",
-			Destination: &userDataFile,
-			EnvVar:      "QVSCLI_USER_DATA_FILE",
 		},
 	}
 
@@ -138,9 +134,51 @@ func main() {
 					},
 				},
 				{
+					Name:    "delete",
+					Aliases: []string{"del"},
+					Usage:   "delete a VM by ID",
+					Action: func(c *cli.Context) error {
+						// Fetch VM meta
+						// Make sure VM is stopped
+						// Delete VM
+						// Delete disk dir.
+						return fmt.Errorf("NYI")
+					},
+				},
+				{
 					Name:    "create",
 					Aliases: []string{"c"},
 					Usage:   "create a VM with provided meta-data and user-data",
+					Flags: []cli.Flag{
+						cli.StringFlag{
+							Name:        "meta-data",
+							Value:       "meta-data.yaml",
+							Usage:       "Path to meta-data file for cloud-init",
+							Destination: &metaDataFile,
+							EnvVar:      "QVSCLI_META_DATA_FILE",
+						},
+						cli.StringFlag{
+							Name:        "user-data",
+							Value:       "user-data.yaml",
+							Usage:       "Path to user-data file for cloud-init",
+							Destination: &userDataFile,
+							EnvVar:      "QVSCLI_USER_DATA_FILE",
+						},
+						cli.StringFlag{
+							Name:        "image",
+							Value:       "debian-cloud/debian-9.img",
+							Usage:       "Path to VM base image relative to qvs-images-dir",
+							Destination: &vmImage,
+							EnvVar:      "QVSCLI_VM_IMAGE",
+						},
+						cli.StringFlag{
+							Name:        "mac",
+							Value:       "",
+							Usage:       "Set mac address of network interface, if not set, one will be created",
+							Destination: &macAddress,
+							EnvVar:      "QVSCLI_VM_MAC",
+						},
+					},
 					Action: func(c *cli.Context) error {
 						client := getClient()
 
@@ -151,20 +189,49 @@ func main() {
 						if !nameRegex.MatchString(name) {
 							return fmt.Errorf("invalid instance name: %s", name)
 						}
-						ts := time.Now().UTC().Unix()
-						isoDestFile := fmt.Sprintf("metadata_%d.iso", ts)
-						if err := makeConfigISO(isoDestFile, metaDataFile, userDataFile); err != nil {
-							return err
+
+						// Generate MAC address
+						if macAddress == "" {
+							macAddress, err := client.MACCreate()
+							if err != nil {
+								return err
+							}
+							log.Printf("INFO: Generated new MAC address for instance: %s", macAddress)
 						}
 
-						qtsDest := path.Join(qtsDisksDir, name, path.Base(isoDestFile))
-
-						// Check for existing folder
-						files, err := client.ListDir(qtsDisksDir)
+						// Verify image exists
+						vmImageSrc := path.Join(qvsImagesDir, vmImage)
+						imageFiles, err := client.ListDir(path.Dir(vmImageSrc))
 						if err != nil {
 							return err
 						}
 						found := false
+						for _, imageFile := range imageFiles {
+							if imageFile.Filename == path.Base(vmImage) {
+								found = true
+								break
+							}
+						}
+						if found == false {
+							return fmt.Errorf("VM image file not found: %s", vmImage)
+						}
+
+						// Timestamp for generated artifacts
+						ts := time.Now().UTC().Unix()
+
+						metadataISOFile := fmt.Sprintf("metadata_%d.iso", ts)
+						if err := makeConfigISO(metadataISOFile, metaDataFile, userDataFile); err != nil {
+							return err
+						}
+
+						metadataISODest := path.Join(qvsDisksDir, name, path.Base(metadataISOFile))
+
+						// Check for existing folder
+						files, err := client.ListDir(qvsDisksDir)
+						if err != nil {
+							return err
+						}
+						found = false
 						for _, qf := range files {
 							if qf.Filename == name {
 								found = true
@@ -174,22 +241,33 @@ func main() {
 
 						// Create directory for VM disk
 						if found == false {
-							log.Printf("INFO: Creating directory on NAS for VM: %s", path.Dir(qtsDest))
-							if err := client.CreateDir(path.Dir(qtsDest)); err != nil {
+							log.Printf("INFO: Creating directory on NAS for VM: %s", path.Dir(metadataISODest))
+							if err := client.CreateDir(path.Dir(metadataISODest)); err != nil {
 								return err
 							}
 						}
 
-						f, err := os.Open(isoDestFile)
+						f, err := os.Open(metadataISOFile)
 						if err != nil {
 							return err
 						}
 
-						if err := client.UploadFile(f, qtsDest); err != nil {
+						log.Printf("INFO: Uploading metadata ISO image to NAS: %s\n", metadataISODest)
+						if err := client.UploadFile(f, metadataISODest); err != nil {
 							return err
 						}
 
-						log.Printf("Uploaded metadata ISO image to NAS: %s\n", qtsDest)
+						// Remote copy image to VM disk directory
+						vmImageDest := path.Join(qvsDisksDir, name, path.Base(vmImage))
+						vmBootDiskFile := fmt.Sprintf("boot_disk_%d.img", ts)
+
+						log.Printf("INFO: Remote copy VM image %s -> %s", vmImageSrc, path.Join(path.Dir(vmImageDest), vmBootDiskFile))
+						if err := client.CopyFile(vmImageSrc, vmImageDest); err != nil {
+							return err
+						}
+						if err := client.RenameFile(path.Dir(vmImageDest), path.Base(vmImageDest), vmBootDiskFile); err != nil {
+							return err
+						}
 
 						return nil
 					},
@@ -207,9 +285,9 @@ func main() {
 	}
 }
 
-func makeConfigISO(isoDestFile, metaDataFile, userDataFile string) error {
+func makeConfigISO(metadataISOFile, metaDataFile, userDataFile string) error {
 	cmd := "genisoimage"
-	args := []string{"-output", isoDestFile, "-volid", "cidata", "-joliet", "-rock", userDataFile, metaDataFile}
+	args := []string{"-output", metadataISOFile, "-volid", "cidata", "-joliet", "-rock", userDataFile, metaDataFile}
 	if err := exec.Command(cmd, args...).Run(); err != nil {
 		return fmt.Errorf("%v, %s", os.Stderr, err)
 	}

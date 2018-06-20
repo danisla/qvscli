@@ -84,6 +84,38 @@ func (c *QVSClient) CreateDir(destDir string) error {
 	return nil
 }
 
+func (c *QVSClient) CopyFile(srcPath string, destPath string) error {
+	srcFile := path.Base(srcPath)
+	srcDir := path.Dir(srcPath)
+	destDir := path.Dir(destPath)
+
+	form := url.Values{}
+	form.Add("source_total", "1")
+	form.Add("mode", "0")
+	form.Add("source_file", srcFile)
+	form.Add("source_path", srcDir)
+	form.Add("dest_path", destDir)
+
+	_, err := c.fsReq("copy", "", form)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *QVSClient) RenameFile(srcPath, srcName, destName string) error {
+	form := url.Values{}
+	form.Add("path", srcPath)
+	form.Add("source_name", srcName)
+	form.Add("dest_name", destName)
+
+	_, err := c.fsReq("rename", "", form)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *QVSClient) UploadFile(srcFile *os.File, destPath string) error {
 	destDir := path.Dir(destPath)
 	qtsPath := strings.Replace(destPath, "/", "-", -1)
