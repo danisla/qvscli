@@ -1,3 +1,7 @@
 *.iso
 debug
 qvscli
+.vscode
+*.json
+*.xml
+NOTES.md

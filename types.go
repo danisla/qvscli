@@ -6,22 +6,30 @@ const QTSAuthLogin = "/cgi-bin/authLogin.cgi"
 const QTSFileStation = "/cgi-bin/filemanager/utilRequest.cgi"
 const QTSNetManager = "/netmgr/api.fcgi/api/net"
 
+const QVSRoot = "/qvs"
 const QVSGetMAC = "/qvs/vms/mac"
-const QVSGetVMs = "/qvs/vms"
+const QVSVMs = "/qvs/vms"
+const QVSVMStart = "/qvs/vms/%s/start"
+const QVSVMForceShutdown = "/qvs/vms/%s/forceshutdown"
+const QVSVMShutdown = "/qvs/vms/%s/shutdown"
 
 type LoginFile struct {
 	QtsURL       string `json:"qts_url"`
 	Username     string `json:"username"`
 	QTSSessionID string `json:"qts_sessionid"`
+	QVSCSRFToken string `json:"qvs_csrftoken"`
+	QVSSessionID string `json:"qvs_sessionid"`
 }
 
 type QVSClient struct {
-	QtsURL     string
-	LoginFile  string
-	SessionID  string
-	CookieJar  *cookiejar.Jar
-	LoginPath  string
-	GetMACPath string
+	QtsURL       string
+	LoginFile    string
+	SessionID    string
+	CookieJar    *cookiejar.Jar
+	LoginPath    string
+	GetMACPath   string
+	QVSCSRFToken string
+	QVSSessionID string
 }
 
 type QTSLoginResponse struct {
@@ -48,11 +56,30 @@ type ListVMsResponse struct {
 }
 
 type VMResponse struct {
+	ID         int               `json:"id"`
+	UUID       string            `json:"uuid"`
+	Name       string            `json:"name"`
+	Cores      int               `json:"cores"`
+	PowerState string            `json:"power_state"`
+	Disks      []VMDisksResponse `json:"disks"`
+}
+
+type VMDisksResponse struct {
 	ID         int    `json:"id"`
-	UUID       string `json:"uuid"`
-	Name       string `json:"name"`
-	Cores      int    `json:"cores"`
-	PowerState string `json:"power_state"`
+	VMID       int    `json:"vm_id"`
+	Path       string `json:"path"`
+	RootPath   string `json:"root_path"`
+	PathExist  bool   `json:"path_exist"`
+	Size       int    `json:"size"`
+	ActualSize int    `json:"actual_size"`
+	Format     string `json:"format"`
+	Bus        string `json:"bus"`
+	Cache      string `json:"cache"`
+	Dev        string `json:"dev"`
+	BootOrder  int    `json:"boot_order"`
+	Index      int    `json:"index"`
+	IsDOM      bool   `json:"is_dom"`
+	VolumeName string `json:"volume_name"`
 }
 
 type NetMgrNet struct {
@@ -68,4 +95,17 @@ type QVSNet struct {
 	DisplayName string   `json:"display_name"`
 	IP          string   `json:"ip"`
 	NICs        []string `json:"nics"`
+}
+
+type QVSCreateRequest struct {
+	Name           string              `json:"name"`
+	Description    string              `json:"description"`
+	OSType         string              `json:"os_type"`
+	Cores          int                 `json:"cores"`
+	Memory         int                 `json:"memory"`
+	Adapters       []map[string]string `json:"adapters"`
+	QVM            bool                `json:"qvm"`
+	IsAgentEnabled bool                `json:"is_agent_enabled"`
+	CDROMs         []map[string]string `json:"cdroms"`
+	Disks          []map[string]string `json:"disks"`
 }

@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -69,8 +69,8 @@ func (c *QVSClient) ListDir(qtsPath string) ([]ListFile, error) {
 }
 
 func (c *QVSClient) CreateDir(destDir string) error {
-	destPath := path.Dir(destDir)
-	destFolder := path.Base(destDir)
+	destPath := filepath.Dir(destDir)
+	destFolder := filepath.Base(destDir)
 
 	form := url.Values{}
 	form.Add("dest_path", destPath)
@@ -85,9 +85,9 @@ func (c *QVSClient) CreateDir(destDir string) error {
 }
 
 func (c *QVSClient) CopyFile(srcPath string, destPath string) error {
-	srcFile := path.Base(srcPath)
-	srcDir := path.Dir(srcPath)
-	destDir := path.Dir(destPath)
+	srcFile := filepath.Base(srcPath)
+	srcDir := filepath.Dir(srcPath)
+	destDir := filepath.Dir(destPath)
 
 	form := url.Values{}
 	form.Add("source_total", "1")
@@ -116,8 +116,26 @@ func (c *QVSClient) RenameFile(srcPath, srcName, destName string) error {
 	return nil
 }
 
+func (c *QVSClient) DeleteFile(srcPath string) error {
+	if srcPath == "/" {
+		return fmt.Errorf("error, attempt to delete '/' on NAS, rejecting.")
+	}
+	form := url.Values{}
+	form.Add("file_name", filepath.Base(srcPath))
+	form.Add("file_total", "1")
+	form.Add("path", filepath.Dir(srcPath))
+	form.Add("v", "2")
+	form.Add("force", "1")
+
+	_, err := c.fsReq("delete", "", form)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (c *QVSClient) UploadFile(srcFile *os.File, destPath string) error {
-	destDir := path.Dir(destPath)
+	destDir := filepath.Dir(destPath)
 	qtsPath := strings.Replace(destPath, "/", "-", -1)
 	reqURL := fmt.Sprintf("%s%s?sid=%s&func=upload&type=standard&dest_path=%s&overwrite=1&progress=%s", c.QtsURL, QTSFileStation, c.SessionID, destDir, qtsPath)
 

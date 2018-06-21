@@ -107,11 +107,32 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 		return fmt.Errorf("error, failed to open login file '%s' for writting: %v", c.LoginFile, err)
 	}
 
+	// Fetch QVS csrftoken and sessionid
+	qvsAuthReq, _ := http.NewRequest("GET", fmt.Sprintf("%s%s", c.QtsURL, QVSRoot), nil)
+	resp, err = client.Do(qvsAuthReq)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("error, failed to get QVS csrftoken and sessionid. Status code: %d", resp.StatusCode)
+	}
+	// Extract csrftoken and sessionid from cookiejar
+	for _, cookie := range c.CookieJar.Cookies(qvsAuthReq.URL) {
+		if cookie.Name == "csrftoken" {
+			c.QVSCSRFToken = cookie.Value
+		}
+		if cookie.Name == "sessionid" {
+			c.QVSSessionID = cookie.Value
+		}
+	}
+
 	// Persist user and session id
 	var lf LoginFile
 	lf.QtsURL = c.QtsURL
 	lf.Username = login.Username
 	lf.QTSSessionID = login.AuthSID
+	lf.QVSCSRFToken = c.QVSCSRFToken
+	lf.QVSSessionID = c.QVSSessionID
 	lfData, _ := json.MarshalIndent(&lf, "", "  ")
 	f.Write(lfData)
 	f.Close()
@@ -137,9 +158,13 @@ func (c *QVSClient) loadQTSCookieFromFile() error {
 	c.CookieJar.SetCookies(u, []*http.Cookie{
 		&http.Cookie{Name: "NAS_USER", Value: lf.Username},
 		&http.Cookie{Name: "NAS_SID", Value: lf.QTSSessionID},
+		&http.Cookie{Name: "csrftoken", Value: lf.QVSCSRFToken},
+		&http.Cookie{Name: "sessionid", Value: lf.QVSSessionID},
 	})
 
 	c.SessionID = lf.QTSSessionID
+	c.QVSCSRFToken = lf.QVSCSRFToken
+	c.QVSSessionID = lf.QVSSessionID
 
 	return nil
 }
