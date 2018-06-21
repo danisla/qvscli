@@ -1,5 +1,0 @@
-#cloud-config
-
-# replace with your own public key (e.g. ~/.ssh/id_rsa.pub)
-ssh_authorized_keys:
-  - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDFT3AmWB6cAEokpW5xT5+qm3h6rNiqYA8Umyb9iywUJ59J2igDL6TkoWjrJkgjSqY9p67l+6FFidH4upjzmaz/j54mUDumSOzWVHoGASCDMK9l1+H26OhzjTaJfGuVMqQzTj/sqCXzZc4sIjHt/bPebXOmlXY2NAOW02uiz0h382Qb4LXZ7t7iBVerARjgoQLdR8FJi3hSde4DU/fABF6pAD553SS6814kqBnIwcp5Th0vgKnzyLAKkzRDtLpMmyd6SMVzdMXc23SIKP89ev1WEmM3g69Ys9MVo4HCp2UBYokVp6EHfb01Z1mGgI/2DOJ2Dtx//fy91/Z/XDwXf15l user@example.com

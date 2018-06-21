@@ -12,6 +12,7 @@ const QVSVMs = "/qvs/vms"
 const QVSVMStart = "/qvs/vms/%s/start"
 const QVSVMForceShutdown = "/qvs/vms/%s/forceshutdown"
 const QVSVMShutdown = "/qvs/vms/%s/shutdown"
+const QVSVNCTpl = "/qvs/#/console/vms/%s"
 
 type LoginFile struct {
 	QtsURL       string `json:"qts_url"`
@@ -109,3 +110,14 @@ type QVSCreateRequest struct {
 	CDROMs         []map[string]string `json:"cdroms"`
 	Disks          []map[string]string `json:"disks"`
 }
+
+const DefaultMetaData = `instance-id: qvs-%s-%d
+local-hostname: %s`
+
+const DefaultUserData = `#cloud-config
+hostname: %s
+ssh_authorized_keys:
+  - %s
+power_state:
+  mode: reboot
+`

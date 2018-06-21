@@ -36,6 +36,8 @@ func main() {
 	var vmNoStart bool
 	var vmNoDiskDel bool
 	var vmNoDelInput bool
+	var vmAuthorizedKey string
+	var defaultPubKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub")
 
 	getClient := func() *QVSClient {
 		client, err := NewQVSClient(qtsURL, loginFile, false)
@@ -208,6 +210,25 @@ func main() {
 					},
 				},
 				{
+					Name:  "vnc",
+					Usage: "open VNC in browser session",
+					Action: func(c *cli.Context) error {
+						client := getClient()
+						idOrName := c.Args().First()
+						vm, err := client.VMGet(idOrName)
+						if err != nil {
+							return err
+						}
+						id := fmt.Sprintf("%d", vm.ID)
+
+						openURL := fmt.Sprintf("%s%s", client.QtsURL, fmt.Sprintf(QVSVNCTpl, id))
+
+						fmt.Println("Open VM VNC viewer in browser: %s", openURL)
+
+						return nil
+					},
+				},
+				{
 					Name:  "start",
 					Usage: "start a stopped VM by ID or name",
 					Action: func(c *cli.Context) error {
@@ -336,10 +357,17 @@ func main() {
 						},
 						cli.StringFlag{
 							Name:        "user-data",
-							Value:       "user-data.yaml",
+							Value:       "",
 							Usage:       "Path to user-data file for cloud-init",
 							Destination: &userDataFile,
 							EnvVar:      "QVSCLI_USER_DATA_FILE",
+						},
+						cli.StringFlag{
+							Name:        "authorized-key",
+							Value:       defaultPubKeyFile,
+							Usage:       "Path to public ssh key file when --user-data is not provided.",
+							Destination: &vmAuthorizedKey,
+							EnvVar:      "QVSCLI_META_DATA_FILE",
 						},
 						cli.BoolFlag{
 							Name:        "no-cloud-init",
@@ -454,11 +482,29 @@ func main() {
 								if err != nil {
 									return err
 								}
-								_, err = mf.WriteString(fmt.Sprintf("instance-id: qvs-%s-%d\nlocal-hostname: %s\n", name, ts, name))
+								_, err = mf.WriteString(fmt.Sprintf(DefaultMetaData, name, ts, name))
 								if err != nil {
 									return err
 								}
 								mf.Close()
+							}
+
+							if userDataFile == "" {
+								authKeyData, err := ioutil.ReadFile(vmAuthorizedKey)
+								if err != nil {
+									return fmt.Errorf("could not generate user-data, error reading %s and --authorized-key not provided, %v", vmAuthorizedKey, err)
+								}
+								userDataFile = filepath.Join(dir, fmt.Sprintf("user-data"))
+								uf, err := os.OpenFile(userDataFile, os.O_RDWR|os.O_CREATE, 0644)
+								if err != nil {
+									return err
+								}
+								_, err = uf.WriteString(fmt.Sprintf(DefaultUserData, name, authKeyData))
+
+								if err != nil {
+									return err
+								}
+								uf.Close()
 							}
 
 							if _, err := os.Stat(userDataFile); os.IsNotExist(err) {

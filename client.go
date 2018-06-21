@@ -24,12 +24,16 @@ func NewQVSClient(qtsURL string, loginFile string, init bool) (*QVSClient, error
 		LoginFile: strings.TrimSpace(loginFile),
 	}
 
-	err := c.loadQTSCookieFromFile()
-	if err != nil {
+	if init {
 		c.CookieJar, _ = cookiejar.New(nil)
+	} else {
+		err := c.loadQTSCookieFromFile()
+		if err != nil {
+			c.CookieJar, _ = cookiejar.New(nil)
+		}
 	}
 
-	if init == false && !c.checkLogin() {
+	if !init && !c.checkLogin() {
 		return nil, fmt.Errorf("not logged in, run 'qvscli login'")
 	}
 
@@ -102,13 +106,26 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 		}
 	}
 
-	f, err := os.OpenFile(c.LoginFile, os.O_CREATE|os.O_WRONLY, 0644)
+	if _, err := os.Stat(c.LoginFile); err == nil {
+		if err := os.Remove(c.LoginFile); err != nil {
+			return err
+		}
+	}
+	f, err := os.OpenFile(c.LoginFile, os.O_CREATE|os.O_RDWR, 0644)
 	if err != nil {
 		return fmt.Errorf("error, failed to open login file '%s' for writting: %v", c.LoginFile, err)
 	}
 
+	// Set cookies for root url prior to fetching csrftoken and sessionid
+	qvsURL := fmt.Sprintf("%s%s/", c.QtsURL, QVSRoot)
+	u, _ := url.Parse(qvsURL)
+	c.CookieJar.SetCookies(u, []*http.Cookie{
+		&http.Cookie{Name: "NAS_USER", Value: login.Username},
+		&http.Cookie{Name: "NAS_SID", Value: login.AuthSID},
+	})
+
 	// Fetch QVS csrftoken and sessionid
-	qvsAuthReq, _ := http.NewRequest("GET", fmt.Sprintf("%s%s", c.QtsURL, QVSRoot), nil)
+	qvsAuthReq, _ := http.NewRequest("GET", qvsURL, nil)
 	resp, err = client.Do(qvsAuthReq)
 	if err != nil {
 		return err
@@ -124,6 +141,9 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 		if cookie.Name == "sessionid" {
 			c.QVSSessionID = cookie.Value
 		}
+	}
+	if c.QVSCSRFToken == "" || c.QVSSessionID == "" {
+		return fmt.Errorf("failed to get csrftoken and sessionid from login cookie")
 	}
 
 	// Persist user and session id

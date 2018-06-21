@@ -78,7 +78,7 @@ func (c *QVSClient) VMGet(idOrName string) (VMResponse, error) {
 		if v.Name == idOrName {
 			return v, nil
 		}
-		if string(v.ID) == idOrName {
+		if fmt.Sprintf("%d", v.ID) == idOrName {
 			return v, nil
 		}
 	}
