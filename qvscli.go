@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
@@ -328,8 +329,8 @@ func main() {
 						},
 						cli.StringFlag{
 							Name:        "meta-data",
-							Value:       "meta-data.yaml",
-							Usage:       "Path to meta-data file for cloud-init",
+							Value:       "",
+							Usage:       "Path to meta-data file override for cloud-init, default is generated automatically",
 							Destination: &metaDataFile,
 							EnvVar:      "QVSCLI_META_DATA_FILE",
 						},
@@ -440,14 +441,33 @@ func main() {
 						if noCloudInit {
 							log.Printf("WARN: cloud-init disabled, skipping metadata ISO creation. You may not be able log into the VM after booting.")
 						} else {
-							metadataISOFile = fmt.Sprintf("metadata_%d.iso", ts)
+							dir, err := ioutil.TempDir("", "ci-metadata-iso")
+							defer os.RemoveAll(dir)
+							if err != nil {
+								return err
+							}
+							metadataISOFile = filepath.Join(dir, fmt.Sprintf("metadata_%d.iso", ts))
+
+							if metaDataFile == "" {
+								metaDataFile = filepath.Join(dir, fmt.Sprintf("meta-data"))
+								mf, err := os.OpenFile(metaDataFile, os.O_RDWR|os.O_CREATE, 0644)
+								if err != nil {
+									return err
+								}
+								_, err = mf.WriteString(fmt.Sprintf("instance-id: qvs-%s-%d\nlocal-hostname: %s\n", name, ts, name))
+								if err != nil {
+									return err
+								}
+								mf.Close()
+							}
+
 							if _, err := os.Stat(userDataFile); os.IsNotExist(err) {
 								return fmt.Errorf("user-data file does not exist: %s", userDataFile)
 							}
 							if _, err := os.Stat(metaDataFile); os.IsNotExist(err) {
 								return fmt.Errorf("meta-data file does not exist: %s", metaDataFile)
 							}
-							if err := makeConfigISO(metadataISOFile, metaDataFile, userDataFile); err != nil {
+							if err = makeConfigISO(metadataISOFile, metaDataFile, userDataFile); err != nil {
 								return err
 							}
 							metadataISODest = filepath.Join(qvsDisksDir, name, filepath.Base(metadataISOFile))
