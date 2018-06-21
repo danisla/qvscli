@@ -11,12 +11,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"text/tabwriter"
 	"time"
 
 	"github.com/urfave/cli"
 )
 
 func main() {
+	var httpDebug bool
 	var outputFormat string
 	var qtsURL string
 	var qvsDisksDir string
@@ -40,7 +42,7 @@ func main() {
 	var defaultPubKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub")
 
 	getClient := func() *QVSClient {
-		client, err := NewQVSClient(qtsURL, loginFile, false)
+		client, err := NewQVSClient(qtsURL, loginFile, false, httpDebug)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -81,6 +83,12 @@ func main() {
 			Destination: &loginFile,
 			EnvVar:      "QVSCLI_LOGIN_FILE",
 		},
+		cli.BoolFlag{
+			Name:        "debug",
+			Usage:       "Enable HTTP response debugging",
+			Destination: &httpDebug,
+			EnvVar:      "QVSCLI_HTTP_DEBUG",
+		},
 	}
 
 	app.Commands = []cli.Command{
@@ -88,7 +96,7 @@ func main() {
 			Name:  "login",
 			Usage: "login to QVS and obtain session cookie stored in ${HOME}/.qvs_login",
 			Action: func(c *cli.Context) error {
-				client, err := NewQVSClient(qtsURL, loginFile, true)
+				client, err := NewQVSClient(qtsURL, loginFile, true, httpDebug)
 				if err != nil {
 					return err
 				}
@@ -142,9 +150,22 @@ func main() {
 							pretty, _ := json.MarshalIndent(networks, "", "  ")
 							fmt.Println(string(pretty))
 						} else if outputFormat == "text" {
-							for _, network := range networks {
-								fmt.Printf("%s\t%s\t%s\t%v\n", network.Name, network.DisplayName, network.IP, network.NICs)
+							// Sort by display name
+							sort.Slice(networks, func(i, j int) bool {
+								return strings.ToLower(networks[i].DisplayName) < strings.ToLower(networks[j].DisplayName)
+							})
+
+							w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+							fmt.Fprintln(w, "NAME\tBRIDGE\tIP\tInterfaces")
+							for _, n := range networks {
+								fmt.Fprintf(w, strings.Join([]string{
+									n.DisplayName,
+									n.Name,
+									n.IP,
+									strings.Join(n.NICs, ","),
+								}, "\t")+"\n")
 							}
+							w.Flush()
 						} else {
 							return fmt.Errorf("invalid output format: %s", outputFormat)
 						}
@@ -179,9 +200,23 @@ func main() {
 							pretty, _ := json.MarshalIndent(vms, "", "  ")
 							fmt.Println(string(pretty))
 						} else if outputFormat == "text" {
+							// Sort by name
+							sort.Slice(vms, func(i, j int) bool {
+								return strings.ToLower(vms[i].Name) < strings.ToLower(vms[j].Name)
+							})
+
+							w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+							fmt.Fprintln(w, "NAME\tID\tSTATE\tNetwork\tMac Address")
 							for _, v := range vms {
-								fmt.Printf("id=%d state=%s name=\"%s\"\n", v.ID, v.PowerState, v.Name)
+								fmt.Fprintf(w, strings.Join([]string{
+									v.Name,
+									fmt.Sprintf("%d", v.ID),
+									v.PowerState,
+									v.Adapters[0].Bridge,
+									v.Adapters[0].MAC,
+								}, "\t")+"\n")
 							}
+							w.Flush()
 						} else {
 							return fmt.Errorf("invalid output format %s", outputFormat)
 						}
@@ -206,25 +241,6 @@ func main() {
 						}
 						pretty, _ := json.MarshalIndent(vms, "", "  ")
 						fmt.Println(string(pretty))
-						return nil
-					},
-				},
-				{
-					Name:  "vnc",
-					Usage: "open VNC in browser session",
-					Action: func(c *cli.Context) error {
-						client := getClient()
-						idOrName := c.Args().First()
-						vm, err := client.VMGet(idOrName)
-						if err != nil {
-							return err
-						}
-						id := fmt.Sprintf("%d", vm.ID)
-
-						openURL := fmt.Sprintf("%s%s", client.QtsURL, fmt.Sprintf(QVSVNCTpl, id))
-
-						fmt.Println("Open VM VNC viewer in browser: %s", openURL)
-
 						return nil
 					},
 				},

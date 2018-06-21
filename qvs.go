@@ -14,12 +14,14 @@ func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Respo
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Referer", c.QtsURL)
 	req.Header.Set("X-CSRFToken", c.QVSCSRFToken)
+	c.reqDebug(req)
 
 	client := &http.Client{
 		Jar: c.CookieJar,
 	}
 
 	resp, err := client.Do(req)
+	c.respDebug(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -57,8 +59,6 @@ func (c *QVSClient) VMList() ([]VMResponse, error) {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	// bodyDebug, _ := ioutil.ReadAll(resp.Body)
-	// fmt.Println(string(bodyDebug))
 	var vmList ListVMsResponse
 	err = json.NewDecoder(resp.Body).Decode(&vmList)
 	if err != nil {

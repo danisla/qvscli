@@ -23,6 +23,7 @@ type LoginFile struct {
 }
 
 type QVSClient struct {
+	HTTPDebug    bool
 	QtsURL       string
 	LoginFile    string
 	SessionID    string
@@ -57,12 +58,13 @@ type ListVMsResponse struct {
 }
 
 type VMResponse struct {
-	ID         int               `json:"id"`
-	UUID       string            `json:"uuid"`
-	Name       string            `json:"name"`
-	Cores      int               `json:"cores"`
-	PowerState string            `json:"power_state"`
-	Disks      []VMDisksResponse `json:"disks"`
+	ID         int                  `json:"id"`
+	UUID       string               `json:"uuid"`
+	Name       string               `json:"name"`
+	Cores      int                  `json:"cores"`
+	PowerState string               `json:"power_state"`
+	Disks      []VMDisksResponse    `json:"disks"`
+	Adapters   []VMAdaptersResponse `json:"adapters"`
 }
 
 type VMDisksResponse struct {
@@ -81,6 +83,15 @@ type VMDisksResponse struct {
 	Index      int    `json:"index"`
 	IsDOM      bool   `json:"is_dom"`
 	VolumeName string `json:"volume_name"`
+}
+
+type VMAdaptersResponse struct {
+	ID     int    `json:"id"`
+	VMID   int    `json:"vm_id"`
+	MAC    string `json:"mac"`
+	Bridge string `json:"bridge"`
+	Model  string `json:"model"`
+	Index  int    `json:"index"`
 }
 
 type NetMgrNet struct {

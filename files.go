@@ -25,12 +25,14 @@ func (c *QVSClient) fsReq(function string, query string, form url.Values) (*http
 	}
 
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8")
+	c.reqDebug(req)
 
 	client := &http.Client{
 		Jar: c.CookieJar,
 	}
 
 	resp, err := client.Do(req)
+	c.respDebug(resp)
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +149,7 @@ func (c *QVSClient) UploadFile(srcFile *os.File, destPath string) error {
 		"data": srcFile,
 	}
 	resp, err := upload(client, reqURL, values)
+	c.respDebug(resp)
 	if err != nil {
 		return err
 	}

@@ -11,12 +11,14 @@ func (c *QVSClient) NetMgrList() ([]NetMgrNet, error) {
 	reqURL := fmt.Sprintf("%s%s/list?sid=%s", c.QtsURL, QTSNetManager, c.SessionID)
 
 	req, _ := http.NewRequest("GET", reqURL, nil)
+	c.reqDebug(req)
 
 	client := &http.Client{
 		Jar: c.CookieJar,
 	}
 
 	resp, err := client.Do(req)
+	c.respDebug(resp)
 	if err != nil {
 		return nil, err
 	}

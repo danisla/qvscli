@@ -8,8 +8,10 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/http/cookiejar"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
@@ -18,10 +20,11 @@ import (
 	"github.com/howeyc/gopass"
 )
 
-func NewQVSClient(qtsURL string, loginFile string, init bool) (*QVSClient, error) {
+func NewQVSClient(qtsURL string, loginFile string, init bool, httpDebug bool) (*QVSClient, error) {
 	c := &QVSClient{
 		QtsURL:    strings.TrimSpace(qtsURL),
 		LoginFile: strings.TrimSpace(loginFile),
+		HTTPDebug: httpDebug,
 	}
 
 	if init {
@@ -71,12 +74,14 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 
 	req, _ := http.NewRequest("POST", authURL, bytes.NewBuffer([]byte(params)))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.reqDebug(req)
 
 	client := &http.Client{
 		Jar: c.CookieJar,
 	}
 
 	resp, err := client.Do(req)
+	c.respDebug(resp)
 	if err != nil {
 		return err
 	}
@@ -126,7 +131,9 @@ func (c *QVSClient) QTSLogin(username string, password string, securityCode stri
 
 	// Fetch QVS csrftoken and sessionid
 	qvsAuthReq, _ := http.NewRequest("GET", qvsURL, nil)
+	c.reqDebug(qvsAuthReq)
 	resp, err = client.Do(qvsAuthReq)
+	c.respDebug(resp)
 	if err != nil {
 		return err
 	}
@@ -197,12 +204,14 @@ func (c *QVSClient) checkLogin() bool {
 
 	req, _ := http.NewRequest("POST", authURL, bytes.NewBuffer([]byte(params)))
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	c.reqDebug(req)
 
 	client := &http.Client{
 		Jar: c.CookieJar,
 	}
 
 	resp, err := client.Do(req)
+	c.respDebug(resp)
 	if err != nil {
 		return false
 	}
@@ -216,4 +225,26 @@ func (c *QVSClient) checkLogin() bool {
 	}
 
 	return login.AuthPassed == 1
+}
+
+func (c *QVSClient) debug(data []byte, err error) {
+	if err == nil {
+		fmt.Printf("%s\n\n", data)
+	} else {
+		log.Fatalf("%s\n\n", err)
+	}
+}
+
+func (c *QVSClient) reqDebug(req *http.Request) {
+	if c.HTTPDebug {
+		c.debug([]byte(fmt.Sprintf("---HTTP REQUEST %s %s ---", req.Method, req.URL.String())), nil)
+		c.debug(httputil.DumpRequestOut(req, true))
+	}
+}
+
+func (c *QVSClient) respDebug(resp *http.Response) {
+	if c.HTTPDebug {
+		c.debug([]byte("---HTTP RESPONSE---"), nil)
+		c.debug(httputil.DumpResponse(resp, true))
+	}
 }
