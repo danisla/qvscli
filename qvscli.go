@@ -127,6 +127,68 @@ func main() {
 			},
 		},
 		{
+			Name:    "images",
+			Aliases: []string{"image"},
+			Usage:   "options for vm disk images",
+			Subcommands: []cli.Command{
+				{
+					Name:      "list",
+					Aliases:   []string{"ls"},
+					Usage:     "list images found in the qvs-images-dir",
+					ArgsUsage: "[path]",
+					Flags: []cli.Flag{
+						cli.StringFlag{
+							Name:        "output, o",
+							Usage:       "Output format, text or json",
+							Value:       "text",
+							Destination: &outputFormat,
+						},
+					},
+					Action: func(c *cli.Context) error {
+						client := getClient()
+
+						imageFilesPath := c.Args().First()
+
+						listPath := filepath.Join(qvsImagesDir, imageFilesPath)
+
+						imageFiles, err := client.ListDir(listPath)
+						if err != nil {
+							return err
+						}
+
+						if outputFormat == "json" {
+							pretty, _ := json.MarshalIndent(imageFiles, "", "  ")
+							fmt.Println(string(pretty))
+						} else if outputFormat == "text" {
+							// Sort by filename
+							sort.Slice(imageFiles, func(i, j int) bool {
+								return strings.ToLower(imageFiles[i].Filename) < strings.ToLower(imageFiles[j].Filename)
+							})
+
+							w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+							fmt.Fprintln(w, "NAME")
+							for _, f := range imageFiles {
+								// Filter by *.img, folders
+								if (strings.Contains(f.Filename, ".img") || f.IsFolder == 1) && !strings.Contains(f.Filename, "@") {
+									displayName := filepath.Join(imageFilesPath, f.Filename)
+									if f.IsFolder == 1 {
+										displayName += "/"
+									}
+									fmt.Fprintf(w, strings.Join([]string{
+										displayName,
+									}, "\t")+"\n")
+								}
+							}
+							w.Flush()
+						} else {
+							return fmt.Errorf("invalid output format: %s", outputFormat)
+						}
+						return nil
+					},
+				},
+			},
+		},
+		{
 			Name:    "networks",
 			Aliases: []string{"net"},
 			Usage:   "options for virtual networks",
@@ -268,6 +330,24 @@ func main() {
 							return err
 						} else {
 							log.Printf("INFO: started VM: %s", idOrName)
+						}
+						return nil
+					},
+				},
+				{
+					Name:  "reset",
+					Usage: "reset a VM by ID or name",
+					Action: func(c *cli.Context) error {
+						client := getClient()
+						idOrName := c.Args().First()
+						id, err := client.VMGetID(idOrName)
+						if err != nil {
+							return err
+						}
+						if err := client.VMReset(id); err != nil {
+							return err
+						} else {
+							log.Printf("INFO: reset VM: %s", idOrName)
 						}
 						return nil
 					},
@@ -446,7 +526,7 @@ func main() {
 						cli.StringFlag{
 							Name:        "vnc-password",
 							Value:       "",
-							Usage:       "VNC password. If not set, one will be automatically generated.",
+							Usage:       "VNC password up to 8 characters long. If not set, one will be automatically generated.",
 							Destination: &vmVNCPassword,
 							EnvVar:      "QVSCLI_VM_VNC_PASSWORD",
 						},

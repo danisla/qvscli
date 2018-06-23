@@ -209,6 +209,15 @@ func (c *QVSClient) VMStart(id string) error {
 	return nil
 }
 
+func (c *QVSClient) VMReset(id string) error {
+	_, err := c.qvsReq("POST", fmt.Sprintf(QVSVMReset, id), "{}")
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (c *QVSClient) VMShutdown(id string, force bool) error {
 	pathTpl := QVSVMShutdown
 	if force {
