@@ -8,6 +8,12 @@
   revision = "bf9dde6d0d2c004a008c27aaee91170c786f6db8"
 
 [[projects]]
+  name = "github.com/sethvargo/go-password"
+  packages = ["password"]
+  revision = "d207206009266fab3e355f1a0488b47ac24139c7"
+  version = "v0.1.1"
+
+[[projects]]
   name = "github.com/urfave/cli"
   packages = ["."]
   revision = "cfb38830724cc34fedffe9a2a29fb54fa9169cd1"
@@ -31,6 +37,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "6425508e1d7c32d2e18b0d4864d97ceb04c33d002986143f33a9496334208b99"
+  inputs-digest = "bd8ef627b5ffd403d4892116a93d34c289aa2699ec34f2ffb97cc33d836ad30d"
   solver-name = "gps-cdcl"
   solver-version = 1
