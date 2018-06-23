@@ -37,7 +37,7 @@ func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Respo
 		return nil, err
 	}
 	qvsStatus := d["status"].(float64)
-	if qvsStatus != 0 {
+	if qvsStatus != QVSStatusOK && qvsStatus != QVSStatusDeferred {
 		return nil, fmt.Errorf("error making request, response status was %d: %v", int(qvsStatus), d["detail"])
 	}
 	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
@@ -119,10 +119,6 @@ func (c *QVSClient) VMDescribe(id string) (interface{}, error) {
 	var jsonData map[string]interface{}
 	err = json.Unmarshal(data, &jsonData)
 
-	status := int(jsonData["status"].(float64))
-	if status != 0 {
-		return "", fmt.Errorf("error making request, status was: %d", status)
-	}
 	return jsonData["data"], err
 }
 
@@ -196,32 +192,18 @@ func (c *QVSClient) VMCreate(name string, description string, osType string, cor
 	}
 
 	jsonData, _ := json.Marshal(&vm)
-	resp, err := c.qvsReq("POST", QVSVMs, string(jsonData))
+	_, err := c.qvsReq("POST", QVSVMs, string(jsonData))
 	if err != nil {
 		return err
-	}
-
-	defer resp.Body.Close()
-	data, _ := ioutil.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		fmt.Errorf("failed to create VM, status code was %d, %s", resp.StatusCode, data)
 	}
 
 	return nil
 }
 
 func (c *QVSClient) VMStart(id string) error {
-	resp, err := c.qvsReq("POST", fmt.Sprintf(QVSVMStart, id), "{}")
+	_, err := c.qvsReq("POST", fmt.Sprintf(QVSVMStart, id), "{}")
 	if err != nil {
 		return err
-	}
-
-	defer resp.Body.Close()
-	data, _ := ioutil.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to create VM, status code was %d, %s", resp.StatusCode, data)
 	}
 
 	return nil
@@ -232,33 +214,82 @@ func (c *QVSClient) VMShutdown(id string, force bool) error {
 	if force {
 		pathTpl = QVSVMForceShutdown
 	}
-	resp, err := c.qvsReq("POST", fmt.Sprintf(pathTpl, id), "{}")
+	_, err := c.qvsReq("POST", fmt.Sprintf(pathTpl, id), "{}")
 	if err != nil {
 		return err
-	}
-
-	defer resp.Body.Close()
-	data, _ := ioutil.ReadAll(resp.Body)
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to force shutdown VM, status code was %d, %s", resp.StatusCode, data)
 	}
 
 	return nil
 }
 
 func (c *QVSClient) VMDelete(id string) error {
-	resp, err := c.qvsReq("DELETE", fmt.Sprintf("%s/%s", QVSVMs, id), "{}")
+	_, err := c.qvsReq("DELETE", fmt.Sprintf("%s/%s", QVSVMs, id), "{}")
 	if err != nil {
 		return err
 	}
 
-	defer resp.Body.Close()
-	data, _ := ioutil.ReadAll(resp.Body)
+	return nil
+}
 
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to delete VM, status code was %d, %s", resp.StatusCode, data)
+func (c *QVSClient) VMSnapshotCreate(id, name, description string) error {
+	snap := &QVSSnapshotRequest{
+		Name:        name,
+		Description: description,
+	}
+	jsonData, _ := json.Marshal(&snap)
+	_, err := c.qvsReq("POST", fmt.Sprintf(QVSVMSnapshots, id), string(jsonData))
+	if err != nil {
+		return err
 	}
 
 	return nil
+}
+
+func (c *QVSClient) VMSnapshotList(id string) ([]VMSnapshotResponse, error) {
+	resp, err := c.qvsReq("GET", fmt.Sprintf(QVSVMSnapshots, id), "{}")
+	if err != nil {
+		return nil, err
+	}
+
+	var snapListResp VMSnapshotListResponse
+	data, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(data, &snapListResp); err != nil {
+		return nil, err
+	}
+
+	return snapListResp.Data, nil
+}
+
+func (c *QVSClient) VMSnapshotDelete(vmID, snapID string) error {
+	_, err := c.qvsReq("DELETE", fmt.Sprintf(QVSVMSnapshot, vmID, snapID), "{}")
+
+	return err
+}
+
+func (c *QVSClient) VMSnapGet(vmID, idOrName string) (VMSnapshotResponse, error) {
+	// Lookup ID from name
+	snaps, err := c.VMSnapshotList(vmID)
+	if err != nil {
+		return VMSnapshotResponse{}, err
+	}
+	for _, s := range snaps {
+		if s.Name == idOrName {
+			return s, nil
+		}
+		if fmt.Sprintf("%d", s.ID) == idOrName {
+			return s, nil
+		}
+	}
+	return VMSnapshotResponse{}, fmt.Errorf("Snapshot with id or name '%s' not found", idOrName)
+}
+
+func (c *QVSClient) VMSnapGetID(vmID, idOrName string) (string, error) {
+	snap, err := c.VMSnapGet(vmID, idOrName)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%d", snap.ID), nil
 }
