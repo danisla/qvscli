@@ -130,8 +130,9 @@ func main() {
 			Usage:   "options for virtual networks",
 			Subcommands: []cli.Command{
 				{
-					Name:  "list",
-					Usage: "list virtual networks",
+					Name:    "list",
+					Aliases: []string{"ls"},
+					Usage:   "list virtual networks",
 					Flags: []cli.Flag{
 						cli.StringFlag{
 							Name:        "output, o",
@@ -182,8 +183,9 @@ func main() {
 			Usage: "options for virtual machines",
 			Subcommands: []cli.Command{
 				{
-					Name:  "list",
-					Usage: "list virtual machines",
+					Name:    "list",
+					Aliases: []string{"ls"},
+					Usage:   "list virtual machines",
 					Flags: []cli.Flag{
 						cli.StringFlag{
 							Name:        "output, o",
@@ -297,7 +299,7 @@ func main() {
 				},
 				{
 					Name:    "delete",
-					Aliases: []string{"del"},
+					Aliases: []string{"del", "rm"},
 					Usage:   "delete a VM by ID or name",
 					Flags: []cli.Flag{
 						cli.BoolFlag{
@@ -530,8 +532,11 @@ func main() {
 									return err
 								}
 
-								_, err = uf.WriteString(fmt.Sprintf(DefaultUserData, name, authKeyData))
+								// Generate SSH password
+								vmSSHPassword, err := password.Generate(8, 2, 0, false, false)
+								log.Printf("Your SSH password is: %s", vmSSHPassword)
 
+								_, err = uf.WriteString(fmt.Sprintf(DefaultUserData, name, vmSSHPassword, authKeyData))
 								if err != nil {
 									return err
 								}
@@ -625,7 +630,11 @@ func main() {
 							if err := client.VMStart(id); err != nil {
 								return err
 							} else {
-								log.Printf("INFO: VM started.")
+								v, err := client.VMGet(name)
+								if err != nil {
+									return err
+								}
+								log.Printf("INFO: VM started. VNC port: %d", v.Graphics[0].Port)
 							}
 						}
 						return nil

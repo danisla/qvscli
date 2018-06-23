@@ -143,8 +143,21 @@ local-hostname: %s`
 
 const DefaultUserData = `#cloud-config
 hostname: %s
+
+password: %s
+ssh_pwauth: True
+chpasswd: { expire: False }
+
+write_files:
+- path: /etc/network/if-up.d/show-ip-address
+  permissions: '0755'
+  content: |
+    #!/bin/sh
+    egrep -q -e "eth0=[0-9].*" /etc/issue && exit 0
+    sed -i'' 's/\\n \\l.*$/\\n \\l '"eth0=$(hostname -I)"'/g' /etc/issue
+
 ssh_authorized_keys:
-  - %s
+- %s
 power_state:
   mode: reboot
 `
