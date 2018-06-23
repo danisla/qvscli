@@ -23,6 +23,5 @@ qvs cli vm desc 1
 ## Building
 
 ```
-dep ensure
-go build
+go install
 ```

@@ -515,6 +515,7 @@ func main() {
 								if err != nil {
 									return err
 								}
+
 								_, err = uf.WriteString(fmt.Sprintf(DefaultUserData, name, authKeyData))
 
 								if err != nil {
@@ -549,7 +550,7 @@ func main() {
 						}
 
 						if vmDescription == "" {
-							vmDescription = fmt.Sprintf("Created with qvmcli at %s", now.Format("20060102150405"))
+							vmDescription = fmt.Sprintf("Created with qvscli at %s", now.Format("20060102150405"))
 						}
 
 						// Create directory for VM disk
