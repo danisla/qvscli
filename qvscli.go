@@ -14,6 +14,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/sethvargo/go-password/password"
 	"github.com/urfave/cli"
 )
 
@@ -39,6 +40,7 @@ func main() {
 	var vmNoDiskDel bool
 	var vmNoDelInput bool
 	var vmAuthorizedKey string
+	var vmVNCPassword string
 	var defaultPubKeyFile = filepath.Join(os.Getenv("HOME"), ".ssh", "id_rsa.pub")
 
 	getClient := func() *QVSClient {
@@ -206,14 +208,19 @@ func main() {
 							})
 
 							w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-							fmt.Fprintln(w, "NAME\tID\tSTATE\tNetwork\tMac Address")
+							fmt.Fprintln(w, "NAME\tID\tSTATE\tNetwork\tMac Address\tVNC Port")
 							for _, v := range vms {
+								vncPort := ""
+								if len(v.Graphics) > 0 && v.Graphics[0].Port > 0 {
+									vncPort = fmt.Sprintf("%d", v.Graphics[0].Port)
+								}
 								fmt.Fprintf(w, strings.Join([]string{
 									v.Name,
 									fmt.Sprintf("%d", v.ID),
 									v.PowerState,
 									v.Adapters[0].Bridge,
 									v.Adapters[0].MAC,
+									vncPort,
 								}, "\t")+"\n")
 							}
 							w.Flush()
@@ -417,21 +424,28 @@ func main() {
 							Value:       "",
 							Usage:       "VM description. Default is auto-generated based on the creation time",
 							Destination: &vmDescription,
-							EnvVar:      "QVS_CLI_VM_DESCRIPTION",
+							EnvVar:      "QVSCLI_VM_DESCRIPTION",
 						},
 						cli.IntFlag{
 							Name:        "cores",
 							Value:       1,
 							Usage:       "Number of cores for VM",
 							Destination: &vmCores,
-							EnvVar:      "QVS_CLI_VM_CORES",
+							EnvVar:      "QVSCLI_VM_CORES",
 						},
 						cli.IntFlag{
 							Name:        "memory, mem",
 							Value:       2,
 							Usage:       "Memory for VM in integer Gigabytes",
 							Destination: &vmMemoryGB,
-							EnvVar:      "QVS_CLI_VM_MEM_GB",
+							EnvVar:      "QVSCLI_VM_MEM_GB",
+						},
+						cli.StringFlag{
+							Name:        "vnc-password",
+							Value:       "",
+							Usage:       "VNC password. If not set, one will be automatically generated.",
+							Destination: &vmVNCPassword,
+							EnvVar:      "QVSCLI_VM_VNC_PASSWORD",
 						},
 					},
 					Action: func(c *cli.Context) error {
@@ -586,8 +600,16 @@ func main() {
 							return err
 						}
 
+						// Generate VNC Password if not given
+						if vmVNCPassword == "" {
+							// Generate a password that is 8 characters long with 3 digits, 0 symbols,
+							// allowing upper and lower case letters, disallowing repeat characters.
+							vmVNCPassword, err = password.Generate(8, 2, 0, false, false)
+							log.Printf("Your VNC password is: %s", vmVNCPassword)
+						}
+
 						// Create VM
-						if err := client.VMCreate(name, vmDescription, "linux", vmCores, vmMemoryGB, vmNetName, vmMACAddress, metadataISODest, vmImagePath); err != nil {
+						if err := client.VMCreate(name, vmDescription, "linux", vmCores, vmMemoryGB, vmNetName, vmMACAddress, metadataISODest, vmImagePath, vmVNCPassword); err != nil {
 							return err
 						}
 						log.Printf("INFO: VM Created: %s.", name)

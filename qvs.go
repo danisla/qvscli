@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -29,6 +30,17 @@ func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Respo
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("error making request, HTTP status code: %d", resp.StatusCode)
 	}
+
+	var d map[string]interface{}
+	body, _ := ioutil.ReadAll(resp.Body)
+	if err = json.Unmarshal(body, &d); err != nil {
+		return nil, err
+	}
+	qvsStatus := d["status"].(float64)
+	if qvsStatus != 0 {
+		return nil, fmt.Errorf("error making request, response status was %d: %v", int(qvsStatus), d["detail"])
+	}
+	resp.Body = ioutil.NopCloser(bytes.NewBuffer(body))
 
 	return resp, nil
 }
@@ -138,7 +150,7 @@ func (c *QVSClient) QVSListNet() ([]QVSNet, error) {
 	return networks, nil
 }
 
-func (c *QVSClient) VMCreate(name string, description string, osType string, cores int, memGB int, network string, mac string, bootISOPath string, diskImagePath string) error {
+func (c *QVSClient) VMCreate(name string, description string, osType string, cores int, memGB int, network string, mac string, bootISOPath string, diskImagePath string, vncPassword string) error {
 	var vm QVSCreateRequest
 	vm.Name = name
 	vm.Description = description
@@ -148,6 +160,8 @@ func (c *QVSClient) VMCreate(name string, description string, osType string, cor
 	} else {
 		vm.OSType = "win100"
 	}
+
+	vm.IsAgentEnabled = true
 
 	vm.Cores = cores
 	vm.Memory = memGB * 1024 * 1024 * 1024
@@ -168,6 +182,17 @@ func (c *QVSClient) VMCreate(name string, description string, osType string, cor
 			"creating_image": "false",
 			"path":           diskImagePath,
 		},
+	}
+	if vncPassword != "" {
+		passwordBase64 := base64.StdEncoding.EncodeToString([]byte(vncPassword))
+
+		vm.Graphics = []QVSCreateGraphicsRequest{
+			QVSCreateGraphicsRequest{
+				Type:           "vnc",
+				EnablePassword: true,
+				Password:       passwordBase64,
+			},
+		}
 	}
 
 	jsonData, _ := json.Marshal(&vm)

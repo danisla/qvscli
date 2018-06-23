@@ -65,6 +65,7 @@ type VMResponse struct {
 	PowerState string               `json:"power_state"`
 	Disks      []VMDisksResponse    `json:"disks"`
 	Adapters   []VMAdaptersResponse `json:"adapters"`
+	Graphics   []VMGraphicsResponse `json:"graphics"`
 }
 
 type VMDisksResponse struct {
@@ -94,6 +95,14 @@ type VMAdaptersResponse struct {
 	Index  int    `json:"index"`
 }
 
+type VMGraphicsResponse struct {
+	ID             int    `json:"id"`
+	VMID           int    `json:"vm_id"`
+	EnablePassword bool   `json:"enable_password"`
+	Port           int    `json:"port"`
+	Type           string `json:"type"`
+}
+
 type NetMgrNet struct {
 	DisplayName string `json:"display_name"`
 	PhysicalNIC string `json:"physical_nic"`
@@ -110,16 +119,23 @@ type QVSNet struct {
 }
 
 type QVSCreateRequest struct {
-	Name           string              `json:"name"`
-	Description    string              `json:"description"`
-	OSType         string              `json:"os_type"`
-	Cores          int                 `json:"cores"`
-	Memory         int                 `json:"memory"`
-	Adapters       []map[string]string `json:"adapters"`
-	QVM            bool                `json:"qvm"`
-	IsAgentEnabled bool                `json:"is_agent_enabled"`
-	CDROMs         []map[string]string `json:"cdroms"`
-	Disks          []map[string]string `json:"disks"`
+	Name           string                     `json:"name"`
+	Description    string                     `json:"description"`
+	OSType         string                     `json:"os_type"`
+	Cores          int                        `json:"cores"`
+	Memory         int                        `json:"memory"`
+	Adapters       []map[string]string        `json:"adapters"`
+	QVM            bool                       `json:"qvm"`
+	IsAgentEnabled bool                       `json:"is_agent_enabled"`
+	CDROMs         []map[string]string        `json:"cdroms"`
+	Disks          []map[string]string        `json:"disks"`
+	Graphics       []QVSCreateGraphicsRequest `json:"graphics"`
+}
+
+type QVSCreateGraphicsRequest struct {
+	Type           string `json:"type"`
+	EnablePassword bool   `json:"enable_password"`
+	Password       string `json:"password"`
 }
 
 const DefaultMetaData = `instance-id: qvs-%s-%d
