@@ -43,7 +43,6 @@ func main() {
 	var vmAuthorizedKey string
 	var vmVNCPassword string
 	var vmSnapshotIdOrName string
-	var vmSnapshotDescription string
 
 	getClient := func() *QVSClient {
 		client, err := NewQVSClient(qtsURL, loginFile, false, httpDebug)
@@ -373,7 +372,11 @@ func main() {
 						if err := client.VMShutdown(id, vmForceShutdown); err != nil {
 							return err
 						} else {
-							log.Printf("INFO: VM stopped: %s.", idOrName)
+							if vmForceShutdown {
+								log.Printf("INFO: VM stopped: %s.", idOrName)
+							} else {
+								log.Printf("INFO: Sent ACPI shutdown signal to VM: %s.", idOrName)
+							}
 						}
 						return nil
 					},
@@ -724,60 +727,31 @@ func main() {
 				{
 					Name:    "snapshot",
 					Aliases: []string{"snap"},
-					Usage:   "options for VM snapshots",
+					Usage:   "options for VM disk snapshots",
 					Subcommands: []cli.Command{
 						{
-							Name:      "list",
-							Aliases:   []string{"ls"},
-							Usage:     "List snapshots for VM",
-							ArgsUsage: "[VM id or name]",
-							Flags: []cli.Flag{
-								cli.StringFlag{
-									Name:        "output, o",
-									Usage:       "Output format, text or json",
-									Value:       "text",
-									Destination: &outputFormat,
-								},
-							},
+							Name:    "list",
+							Aliases: []string{"ls"},
+							Usage:   "list all VM snapshots",
 							Action: func(c *cli.Context) error {
 								client := getClient()
-								idOrName := c.Args().First()
-								if idOrName == "" {
-									return fmt.Errorf("No VM ID or name provided.")
-								}
-								id, err := client.VMGetID(idOrName)
+								snapDir := filepath.Join(qvsImagesDir, "snapshots")
+								snapFiles, err := client.ListDir(snapDir)
 								if err != nil {
 									return err
 								}
-
-								snaps, err := client.VMSnapshotList(id)
-								if err != nil {
-									return err
-								}
-
-								if outputFormat == "json" {
-									pretty, _ := json.MarshalIndent(snaps, "", "  ")
-									fmt.Println(string(pretty))
-								} else if outputFormat == "text" {
-									// Sort by creation time
-									sort.Slice(snaps, func(i, j int) bool {
-										return strings.ToLower(snaps[i].CreationTime) < strings.ToLower(snaps[j].CreationTime)
-									})
-
-									w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-									fmt.Fprintln(w, "NAME\tID\tCREATED\tDESCRIPTION")
-									for _, n := range snaps {
+								w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+								fmt.Fprintln(w, "NAME\tTIMESTAMP")
+								for _, f := range snapFiles {
+									// ts := time.Unix(f.EpochMT, 0)
+									if f.IsFolder == 0 {
 										fmt.Fprintf(w, strings.Join([]string{
-											n.Name,
-											fmt.Sprintf("%d", n.ID),
-											n.CreationTime,
-											n.Description,
+											f.Filename,
+											f.MT,
 										}, "\t")+"\n")
 									}
-									w.Flush()
-								} else {
-									return fmt.Errorf("invalid output format: %s", outputFormat)
 								}
+								w.Flush()
 
 								return nil
 							},
@@ -791,11 +765,6 @@ func main() {
 									Usage:       "The ID or name of the VM to snapshot.",
 									Destination: &vmSnapshotIdOrName,
 								},
-								cli.StringFlag{
-									Name:        "description",
-									Usage:       "Description of the snapshot",
-									Destination: &vmSnapshotDescription,
-								},
 							},
 							Action: func(c *cli.Context) error {
 								client := getClient()
@@ -805,46 +774,40 @@ func main() {
 								}
 
 								name := c.Args().First()
-
-								if err := client.VMSnapshotCreate(id, name, vmSnapshotDescription); err != nil {
+								snapDir := filepath.Join(qvsImagesDir, "snapshots")
+								snap, err := client.VMDiskSnapshotCreate(id, name, snapDir)
+								if err != nil {
 									return err
 								}
 
-								log.Printf("Creating snapshot of VM '%s' named '%s'", vmSnapshotIdOrName, name)
+								log.Printf("Created disk snapshot %s", snap)
 
 								return nil
 							},
 						},
 						{
-							Name:    "delete",
-							Aliases: []string{"del", "rm"},
-							Usage:   "delete a snapshot by ID or name",
-							Flags: []cli.Flag{
-								cli.StringFlag{
-									Name:        "vm",
-									Usage:       "The ID or name of the VM to snapshot.",
-									Destination: &vmSnapshotIdOrName,
-								},
-							},
+							Name:      "delete",
+							Aliases:   []string{"del", "rm"},
+							Usage:     "delete a snapshot",
+							ArgsUsage: "[snapshot file name]",
 							Action: func(c *cli.Context) error {
 								client := getClient()
-								vmID, err := client.VMGetID(vmSnapshotIdOrName)
+
+								snapFile := c.Args().First()
+								snapDir := filepath.Join(qvsImagesDir, "snapshots")
+								snapFiles, err := client.ListDir(snapDir)
 								if err != nil {
-									return err
+									return nil
 								}
 
-								idOrName := c.Args().First()
-								snapID, err := client.VMSnapGetID(vmID, idOrName)
-								if err != nil {
-									return err
+								for _, f := range snapFiles {
+									if filepath.Base(f.Filename) == snapFile {
+										log.Printf("Deleting snapshot file: %s", f.Filename)
+										return client.DeleteFile(filepath.Join(snapDir, f.Filename))
+									}
 								}
 
-								if err := client.VMSnapshotDelete(vmID, snapID); err != nil {
-									return err
-								}
-								log.Printf("Deleted snapshot for VM '%s' named '%s'", vmSnapshotIdOrName, idOrName)
-
-								return nil
+								return fmt.Errorf("failed to find snapshot file '%s' in snapshot directory", snapFile)
 							},
 						},
 					},

@@ -51,6 +51,9 @@ type QTSLoginResponse struct {
 type ListFile struct {
 	Filename string `json:"filename"`
 	IsFolder int    `json:"isfolder"`
+	Filesize int    `json:"filesize"`
+	MT       string `json:"mt"`
+	EpochMT  int64  `json:"1529790238"`
 }
 
 type CreateMACResponse struct {

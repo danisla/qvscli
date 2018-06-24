@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
+	"path/filepath"
 )
 
 func (c *QVSClient) qvsReq(method string, path string, data string) (*http.Response, error) {
@@ -240,65 +242,48 @@ func (c *QVSClient) VMDelete(id string) error {
 	return nil
 }
 
-func (c *QVSClient) VMSnapshotCreate(id, name, description string) error {
-	snap := &QVSSnapshotRequest{
-		Name:        name,
-		Description: description,
-	}
-	jsonData, _ := json.Marshal(&snap)
-	_, err := c.qvsReq("POST", fmt.Sprintf(QVSVMSnapshots, id), string(jsonData))
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (c *QVSClient) VMSnapshotList(id string) ([]VMSnapshotResponse, error) {
-	resp, err := c.qvsReq("GET", fmt.Sprintf(QVSVMSnapshots, id), "{}")
-	if err != nil {
-		return nil, err
-	}
-
-	var snapListResp VMSnapshotListResponse
-	data, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	if err := json.Unmarshal(data, &snapListResp); err != nil {
-		return nil, err
-	}
-
-	return snapListResp.Data, nil
-}
-
-func (c *QVSClient) VMSnapshotDelete(vmID, snapID string) error {
-	_, err := c.qvsReq("DELETE", fmt.Sprintf(QVSVMSnapshot, vmID, snapID), "{}")
-
-	return err
-}
-
-func (c *QVSClient) VMSnapGet(vmID, idOrName string) (VMSnapshotResponse, error) {
-	// Lookup ID from name
-	snaps, err := c.VMSnapshotList(vmID)
-	if err != nil {
-		return VMSnapshotResponse{}, err
-	}
-	for _, s := range snaps {
-		if s.Name == idOrName {
-			return s, nil
-		}
-		if fmt.Sprintf("%d", s.ID) == idOrName {
-			return s, nil
-		}
-	}
-	return VMSnapshotResponse{}, fmt.Errorf("Snapshot with id or name '%s' not found", idOrName)
-}
-
-func (c *QVSClient) VMSnapGetID(vmID, idOrName string) (string, error) {
-	snap, err := c.VMSnapGet(vmID, idOrName)
+func (c *QVSClient) VMDiskSnapshotCreate(vmID, name, snapDir string) (string, error) {
+	vm, err := c.VMGet(vmID)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%d", snap.ID), nil
+	if vm.PowerState != "stop" {
+		return "", fmt.Errorf("error, VM must be stopped before creating disk snapshot")
+	}
+	srcPath := vm.Disks[0].RootPath
+	srcBase := filepath.Base(srcPath)
+	destDir := filepath.Dir(snapDir)
+	destPath := filepath.Join(snapDir, fmt.Sprintf("qvs-snap-%s.img", name))
+
+	qfiles, err := c.ListDir(destDir)
+	if err != nil {
+		return "", err
+	}
+	snapBase := filepath.Base(snapDir)
+	found := false
+	for _, f := range qfiles {
+		if f.Filename == snapBase && f.IsFolder == 1 {
+			found = true
+			break
+		}
+	}
+	if !found {
+		if err := c.CreateDir(snapDir); err != nil {
+			return "", err
+		}
+	}
+	if err := c.CreateDir(snapDir); err != nil {
+		log.Printf("Creating snapshot dir: %s", snapDir)
+		return "", err
+	}
+	tmpDestPath := filepath.Join(snapDir, srcBase)
+	if err := c.CopyFile(srcPath, tmpDestPath); err != nil {
+		return "", err
+	}
+	// Rename
+	if err := c.RenameFile(snapDir, srcBase, filepath.Base(destPath)); err != nil {
+		return "", err
+	}
+
+	return destPath, nil
 }
