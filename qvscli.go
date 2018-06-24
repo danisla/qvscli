@@ -55,7 +55,7 @@ func main() {
 	app := cli.NewApp()
 	app.Name = "qvscli"
 	app.Usage = "Interact with QNAP Virtualization Station"
-	app.Version = "0.0.1"
+	app.Version = "0.0.3-dev"
 
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
