@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"text/template"
 	"time"
 
 	"github.com/sethvargo/go-password/password"
@@ -104,6 +105,27 @@ func main() {
 					return err
 				}
 				return client.Login()
+			},
+		},
+		{
+			Name: "test",
+			Action: func(c *cli.Context) error {
+				t := template.New("user-data")
+				t, _ = t.Parse(DefaultUserDataTemplate)
+				// t, _ = t.Parse("Hello {{.Name}}")
+				type tmplData struct {
+					Hostname      string
+					LoginPassword string
+					StartupScript string
+					AuthorizedKey string
+				}
+				data := tmplData{
+					Hostname:      "host1",
+					LoginPassword: "password",
+					StartupScript: "",
+					AuthorizedKey: "key1",
+				}
+				return t.Execute(os.Stdout, data)
 			},
 		},
 		{

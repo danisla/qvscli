@@ -171,6 +171,35 @@ type QVSCreateGraphicsRequest struct {
 const DefaultMetaData = `instance-id: qvs-%s-%d
 local-hostname: %s`
 
+const DefaultUserDataTemplate = `#cloud-config
+hostname: {{.Hostname}}
+
+password: {{.LoginPassword}}
+ssh_pwauth: True
+chpasswd: { expire: False }
+
+write_files:
+- path: /etc/network/if-up.d/show-ip-address
+  permissions: '0755'
+  content: |
+    #!/bin/sh
+    egrep -q -e "eth0=[0-9].*" /etc/issue && exit 0
+    sed -i'' 's/\\n \\l.*$/\\n \\l '"eth0=$(hostname -I)"'/g' /etc/issue
+
+{{- if .StartupScript }}
+- path: /var/run/cloud-init/tmp/startup-script
+	permissions: '0755'
+	content: |
+{{.StartupScript}}
+		
+{{end}}
+
+ssh_authorized_keys:
+- {{.AuthorizedKey}}
+power_state:
+  mode: reboot
+`
+
 const DefaultUserData = `#cloud-config
 hostname: %s
 
@@ -185,6 +214,11 @@ write_files:
     #!/bin/sh
     egrep -q -e "eth0=[0-9].*" /etc/issue && exit 0
     sed -i'' 's/\\n \\l.*$/\\n \\l '"eth0=$(hostname -I)"'/g' /etc/issue
+
+- path: /var/run/cloud-init/tmp/startup-script
+  permissions: '0755'
+  content: |
+    %s
 
 ssh_authorized_keys:
 - %s
