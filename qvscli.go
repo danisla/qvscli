@@ -15,6 +15,8 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/Masterminds/sprig"
+
 	"github.com/sethvargo/go-password/password"
 	"github.com/urfave/cli"
 )
@@ -30,6 +32,7 @@ func main() {
 	var loginFile string
 	var metaDataFile string
 	var userDataFile string
+	var vmStartupScript string
 	var noCloudInit bool
 	var vmImage string
 	var vmMACAddress string
@@ -43,7 +46,7 @@ func main() {
 	var vmNoDelInput bool
 	var vmAuthorizedKey string
 	var vmVNCPassword string
-	var vmSnapshotIdOrName string
+	var vmSnapshotIDOrName string
 
 	getClient := func() *QVSClient {
 		client, err := NewQVSClient(qtsURL, loginFile, false, httpDebug)
@@ -110,9 +113,7 @@ func main() {
 		{
 			Name: "test",
 			Action: func(c *cli.Context) error {
-				t := template.New("user-data")
-				t, _ = t.Parse(DefaultUserDataTemplate)
-				// t, _ = t.Parse("Hello {{.Name}}")
+				t, _ := template.New("user-data").Funcs(sprig.TxtFuncMap()).Parse(DefaultUserDataTemplate)
 				type tmplData struct {
 					Hostname      string
 					LoginPassword string
@@ -122,7 +123,7 @@ func main() {
 				data := tmplData{
 					Hostname:      "host1",
 					LoginPassword: "password",
-					StartupScript: "",
+					StartupScript: "#!/bin/bash\necho \"foo\"",
 					AuthorizedKey: "key1",
 				}
 				return t.Execute(os.Stdout, data)
@@ -480,6 +481,13 @@ func main() {
 							EnvVar:      "QVSCLI_VM_NO_START",
 						},
 						cli.StringFlag{
+							Name:        "startup-script",
+							Value:       "",
+							Usage:       "Path to startup script to run as runcmd action in cloud-init",
+							Destination: &vmStartupScript,
+							EnvVar:      "QVSCLI_STARTUP_SCRIPT",
+						},
+						cli.StringFlag{
 							Name:        "meta-data",
 							Value:       "",
 							Usage:       "Path to meta-data file override for cloud-init, default is generated automatically",
@@ -508,7 +516,7 @@ func main() {
 						},
 						cli.StringFlag{
 							Name:        "image",
-							Value:       "debian-cloud/debian-9.img",
+							Value:       "ubuntu-cloud/xenial.img",
 							Usage:       "Path to VM base image relative to qvs-images-dir",
 							Destination: &vmImage,
 							EnvVar:      "QVSCLI_VM_IMAGE",
@@ -642,8 +650,32 @@ func main() {
 								vmSSHPassword, err := password.Generate(8, 2, 0, false, false)
 								log.Printf("Your SSH password is: %s", vmSSHPassword)
 
-								_, err = uf.WriteString(fmt.Sprintf(DefaultUserData, name, vmSSHPassword, authKeyData))
-								if err != nil {
+								// Generate user-data from template
+								t, _ := template.New("user-data").Funcs(sprig.TxtFuncMap()).Parse(DefaultUserDataTemplate)
+								type tmplData struct {
+									Hostname      string
+									LoginPassword string
+									StartupScript string
+									AuthorizedKey string
+								}
+
+								// Read startup-script file, if defined.
+								var startupScript []byte
+								_, err = os.Stat(vmStartupScript)
+								if err == nil {
+									startupScript, err = ioutil.ReadFile(vmStartupScript)
+									if err != nil {
+										return err
+									}
+								}
+
+								data := tmplData{
+									Hostname:      name,
+									LoginPassword: vmSSHPassword,
+									StartupScript: string(startupScript),
+									AuthorizedKey: string(authKeyData),
+								}
+								if err = t.Execute(uf, data); err != nil {
 									return err
 								}
 								uf.Close()
@@ -785,12 +817,12 @@ func main() {
 								cli.StringFlag{
 									Name:        "vm",
 									Usage:       "The ID or name of the VM to snapshot.",
-									Destination: &vmSnapshotIdOrName,
+									Destination: &vmSnapshotIDOrName,
 								},
 							},
 							Action: func(c *cli.Context) error {
 								client := getClient()
-								id, err := client.VMGetID(vmSnapshotIdOrName)
+								id, err := client.VMGetID(vmSnapshotIDOrName)
 								if err != nil {
 									return err
 								}
