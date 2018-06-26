@@ -44,6 +44,7 @@ func main() {
 	var vmNoStart bool
 	var vmNoDiskDel bool
 	var vmNoDelInput bool
+	var vmNoLocalLogin bool
 	var vmAuthorizedKey string
 	var vmVNCPassword string
 	var vmSnapshotIDOrName string
@@ -108,25 +109,6 @@ func main() {
 					return err
 				}
 				return client.Login()
-			},
-		},
-		{
-			Name: "test",
-			Action: func(c *cli.Context) error {
-				t, _ := template.New("user-data").Funcs(sprig.TxtFuncMap()).Parse(DefaultUserDataTemplate)
-				type tmplData struct {
-					Hostname      string
-					LoginPassword string
-					StartupScript string
-					AuthorizedKey string
-				}
-				data := tmplData{
-					Hostname:      "host1",
-					LoginPassword: "password",
-					StartupScript: "#!/bin/bash\necho \"foo\"",
-					AuthorizedKey: "key1",
-				}
-				return t.Execute(os.Stdout, data)
 			},
 		},
 		{
@@ -509,6 +491,12 @@ func main() {
 							EnvVar:      "QVSCLI_META_DATA_FILE",
 						},
 						cli.BoolFlag{
+							Name:        "no-local-login",
+							Usage:       "Disable local login, a password will not be generated and only SSH can be used to access the VM.",
+							Destination: &vmNoLocalLogin,
+							EnvVar:      "QVSCLI_NO_LOCAL_LOGIN",
+						},
+						cli.BoolFlag{
 							Name:        "no-cloud-init",
 							Usage:       "Disable cloud-init metadata ISO creation",
 							Destination: &noCloudInit,
@@ -654,6 +642,7 @@ func main() {
 								t, _ := template.New("user-data").Funcs(sprig.TxtFuncMap()).Parse(DefaultUserDataTemplate)
 								type tmplData struct {
 									Hostname      string
+									LocalLogin    bool
 									LoginPassword string
 									StartupScript string
 									AuthorizedKey string
@@ -671,6 +660,7 @@ func main() {
 
 								data := tmplData{
 									Hostname:      name,
+									LocalLogin:    !vmNoLocalLogin,
 									LoginPassword: vmSSHPassword,
 									StartupScript: string(startupScript),
 									AuthorizedKey: string(authKeyData),

@@ -3,9 +3,11 @@ package main
 const DefaultUserDataTemplate = `#cloud-config
 hostname: {{.Hostname}}
 
+{{- if .LocalLogin}}
 password: "{{.LoginPassword}}"
 ssh_pwauth: True
 chpasswd: { expire: False }
+{{- end}}
 
 write_files:
 - path: /etc/network/if-up.d/show-ip-address
